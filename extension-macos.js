@@ -4,16 +4,16 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// Extension version for tracking changes
-const EXTENSION_VERSION = "2023.12.28.16";
-
 // Global configuration storage
 let globalState;
 let outputChannel;
 
-// Global logging function
+function activate(context) {
+    // Create output channel
+    outputChannel = vscode.window.createOutputChannel('RSM VS Code');
+    context.subscriptions.push(outputChannel);
+
     function log(message, popup = false) {
-    if (!outputChannel) return;  // Guard against early calls
         const timestamp = new Date().toISOString();
         const logMessage = `[${timestamp}] ${message}`;
         outputChannel.appendLine(logMessage);
@@ -22,189 +22,15 @@ let outputChannel;
         }
     }
 
-// Helper function to get WSL paths
-async function getWSLPaths() {
-    try {
-        // First check if WSL is available
-        log('Checking if WSL is available...');
-        try {
-            await execPromise('where wsl.exe');
-            log('WSL.exe found');
-        } catch (error) {
-            log(`WSL.exe not found: ${error.message}`);
-            return null;
-        }
-
-        // Get the WSL home path (for use inside WSL/Docker)
-        log('Getting WSL home path...');
-        const wslHome = await execPromise('wsl.exe bash -c \'echo $HOME\'');
-        if (!wslHome || !wslHome.trim()) {
-            log('WSL home path is empty');
-            return null;
-        }
-        const wslHomePath = wslHome.trim();
-        log(`Found WSL home path: ${wslHomePath}`);
-        
-        // Get the Windows-accessible WSL path
-        log('Getting Windows-accessible WSL path...');
-        const windowsPath = await execPromise('wsl.exe bash -c \'wslpath -w $HOME\'');
-        if (!windowsPath || !windowsPath.trim()) {
-            log('Windows-accessible WSL path is empty');
-            return null;
-        }
-        const windowsAccessPath = windowsPath.trim();
-        log(`Found Windows-accessible WSL path: ${windowsAccessPath}`);
-        
-        // Verify the paths exist using a single bash command
-        log('Verifying paths exist...');
-        const checkCmd = 'wsl.exe bash -c \'if [ -d "$HOME" ]; then echo "yes"; else echo "no"; fi\'';
-        log(`Running check command: ${checkCmd}`);
-        const checkPath = await execPromise(checkCmd);
-        if (checkPath.trim() !== 'yes') {
-            log(`WSL home directory does not exist: ${wslHomePath}`);
-            return null;
-        }
-        log('Path verification successful');
-        
-        return {
-            wslHome: wslHomePath,         // e.g., /home/vnijs
-            windowsPath: windowsAccessPath // e.g., \\wsl.localhost\Ubuntu-22.04\home\vnijs
-        };
-    } catch (error) {
-        log(`Error getting WSL paths: ${error.message}`);
-        log(`Full error stack: ${error.stack}`);
-        return null;
-    }
-}
-
-// Helper function to convert Windows path to WSL path
-async function convertToWSLPath(windowsPath) {
-    try {
-        const output = await execPromise(`wsl.exe bash -c 'wslpath "${windowsPath}"'`);
-        return output.trim();
-    } catch (error) {
-        return windowsPath;
-    }
-}
-
-// Helper function to convert WSL path to Windows path
-async function convertToWindowsPath(wslPath) {
-    try {
-        const output = await execPromise(`wsl.exe wslpath -w "${wslPath}"`);
-        return output.trim();
-    } catch (error) {
-        return wslPath;
-    }
-}
-
-// Helper function to get list of WSL distributions
-async function getWSLDistributions() {
-    try {
-        const output = await execPromise('wsl.exe -l -v');
-        const lines = output.split('\n')
-            .filter(line => line.trim() && !line.includes('Windows Subsystem for Linux Distributions:'))
-            .map(line => {
-                const parts = line.trim().split(/\s+/);
-                return {
-                    name: parts[0],
-                    state: parts[1],
-                    version: parts[2]
-                };
-            });
-        return lines;
-    } catch (error) {
-        return [];
-    }
-}
-
-// Helper function to get WSL home directory for a specific distribution
-async function getWSLHomeForDistro(distroName) {
-    try {
-        const output = await execPromise(`wsl.exe -d ${distroName} echo $HOME`);
-        return output.trim();
-    } catch (error) {
-        return null;
-    }
-}
-
-// Helper function to copy files to WSL home
-async function copyToWSLHome(sourcePath, wslHome) {
-    try {
-        // Create .rsm-vscode directory in WSL home if it doesn't exist
-        const rsmDir = '.rsm-vscode';
-        await execPromise(`wsl.exe bash -c 'mkdir -p ${wslHome}/${rsmDir}'`);
-        
-        // Copy the file to WSL
-        const fileName = path.basename(sourcePath);
-        const wslPath = `${wslHome}/${rsmDir}/${fileName}`;
-        const wslSourcePath = sourcePath.replace(/^([A-Za-z]):/, '/mnt/$1').replace(/\\/g, '/').toLowerCase();
-        
-        // Use bash -c to ensure paths are handled correctly in WSL
-        const copyCmd = `wsl.exe bash -c 'cp "${wslSourcePath}" "${wslPath}"'`;
-        log(`Running copy command: ${copyCmd}`);
-        await execPromise(copyCmd);
-        log(`Copied ${sourcePath} to ${wslPath}`);
-        
-        return wslPath;
-    } catch (error) {
-        log(`Error copying file to WSL: ${error.message}`);
-        throw error;
-    }
-}
-
-// Helper function to write file in WSL
-async function writeFileToWSL(content, wslPath) {
-    try {
-        // Write content to a temporary file
-        const tempFile = path.join(os.tmpdir(), 'temp.json');
-        fs.writeFileSync(tempFile, JSON.stringify(content, null, 2));
-        
-        // Copy the file to WSL
-        const wslTempPath = tempFile.replace(/^([A-Za-z]):/, '/mnt/$1').replace(/\\/g, '/').toLowerCase();
-        const copyCmd = `wsl.exe bash -c 'cp "${wslTempPath}" "${wslPath}"'`;
-        log(`Running copy command: ${copyCmd}`);
-        await execPromise(copyCmd);
-        
-        // Clean up temp file
-        fs.unlinkSync(tempFile);
-        
-        log(`Written file to WSL path: ${wslPath}`);
-    } catch (error) {
-        log(`Error writing file to WSL: ${error.message}`);
-        throw error;
-    }
-}
-
-function activate(context) {
-    // Create output channel first so we can use logging
-    outputChannel = vscode.window.createOutputChannel('RSM VS Code');
-    context.subscriptions.push(outputChannel);
-    
-    // Show version and environment info popup
-    (async () => {
-        const wslPaths = await getWSLPaths();
-        let envInfo = '';
-        
-        if (wslPaths) {
-            // Check if Docker is available in default WSL
-            try {
-                await execPromise('wsl.exe docker info');
-                envInfo = `\n\nWSL Environment:\nHome Directory: ${wslPaths.wslHome}\nWindows Path: ${wslPaths.windowsPath}\nDocker: Available`;
-            } catch (error) {
-                envInfo = `\n\nWSL Environment:\nHome Directory: ${wslPaths.wslHome}\nWindows Path: ${wslPaths.windowsPath}\nDocker: Not Available`;
-            }
-        } else {
-            envInfo = '\n\nWSL not detected or not properly configured';
-        }
-        
-        // Show version and environment information
-        vscode.window.showInformationMessage(
-            `RSM VS Code Extension Version: ${EXTENSION_VERSION}${envInfo}`,
-            { modal: true }
-        );
-        log(`Extension Version: ${EXTENSION_VERSION}`);
-        log(envInfo);
-    })();
+    // Initial environment logging
+    const envInfo = {
+        remoteName: vscode.env.remoteName,
+        remoteAuthority: vscode.env.remoteAuthority,
+        shell: vscode.env.shell,
+        uiKind: vscode.env.uiKind,
+        appHost: vscode.env.appHost
+    };
+    log('VS Code Environment: ' + JSON.stringify(envInfo, null, 2));
 
     // Store the global state for later use
     globalState = context.globalState;
@@ -314,6 +140,7 @@ function activate(context) {
         
         // Get the path to the docker-compose file
         const composeFile = path.join(context.extensionPath, 'docker-compose', composeFileName);
+        
         log(`Using compose file: ${composeFile} for ${os.arch()} architecture`);
 
         // Verify compose file exists
@@ -321,14 +148,6 @@ function activate(context) {
             vscode.window.showErrorMessage(`Docker compose file not found: ${composeFile}`);
             return;
         }
-
-        // Get WSL paths
-        const wslPaths = await getWSLPaths();
-        if (!wslPaths) {
-            vscode.window.showErrorMessage('Could not determine WSL paths');
-            return;
-        }
-        log(`Using WSL paths - Home: ${wslPaths.wslHome}, Windows: ${wslPaths.windowsPath}`);
 
         // Show progress while starting container
         await vscode.window.withProgress({
@@ -340,12 +159,10 @@ function activate(context) {
                 // Start the container using docker-compose
                 progress.report({ message: "Starting container with docker-compose..." });
                 
-                // Copy compose file to WSL home directory
-                const wslComposeFile = await copyToWSLHome(composeFile, wslPaths.wslHome);
-                log(`WSL Compose File Path: ${wslComposeFile}`);
+                // Change to the docker-compose directory before running docker-compose
+                const composeDir = path.dirname(composeFile);
+                const command = `cd "${composeDir}" && docker-compose -f "${composeFileName}" up -d`;
                 
-                // Run docker-compose in WSL with explicit HOME
-                const command = `wsl.exe bash -c 'HOME="${wslPaths.wslHome}" docker-compose -f "${wslComposeFile}" up -d'`;
                 log(`Executing command: ${command}`);
                 await execPromise(command);
 
@@ -362,21 +179,51 @@ function activate(context) {
                         canSelectFiles: false,
                         canSelectFolders: true,
                         canSelectMany: false,
-                        defaultUri: vscode.Uri.file(wslPaths.windowsPath),  // Use Windows-accessible path
+                        defaultUri: vscode.Uri.file(os.homedir()),
                         openLabel: 'Select Project Folder'
                     };
 
                     const result = await vscode.window.showOpenDialog(options);
                     if (result && result[0]) {
                         // Convert local path to container path
-                        let localPath = result[0].fsPath;
-                        localPath = await convertToWSLPath(localPath);
-                        workspaceFolder = localPath.replace(wslPaths.wslHome, '/home/jovyan');
+                        const localPath = result[0].fsPath;
+                        workspaceFolder = localPath.replace(os.homedir(), '/home/jovyan');
                         // Store the selected workspace
                         await globalState.update('lastWorkspaceFolder', workspaceFolder);
                         log(`Selected new workspace: ${workspaceFolder}`);
                     }
+                } else {
+                    // Convert the stored container path to local path to check if it exists
+                    const localPath = lastWorkspace.replace('/home/jovyan', os.homedir());
+                    if (fs.existsSync(localPath)) {
+                        workspaceFolder = lastWorkspace;
+                        log(`Using stored workspace: ${workspaceFolder}`);
+                    } else {
+                        // If path doesn't exist, prompt for new folder
+                        log(`Stored workspace not found: ${lastWorkspace}, prompting for new location`);
+                        const options = {
+                            canSelectFiles: false,
+                            canSelectFolders: true,
+                            canSelectMany: false,
+                            defaultUri: vscode.Uri.file(os.homedir()),
+                            openLabel: 'Select Project Folder'
+                        };
+
+                        const result = await vscode.window.showOpenDialog(options);
+                        if (result && result[0]) {
+                            // Convert local path to container path
+                            const localPath = result[0].fsPath;
+                            workspaceFolder = localPath.replace(os.homedir(), '/home/jovyan');
+                            // Store the selected workspace
+                            await globalState.update('lastWorkspaceFolder', workspaceFolder);
+                            log(`Selected new workspace: ${workspaceFolder}`);
+                        }
+                    }
                 }
+
+                // Convert container path to local path
+                const localPath = workspaceFolder.replace('/home/jovyan', os.homedir());
+                const folderName = path.basename(localPath);
 
                 // Create temporary .devcontainer directory and file for initial connection
                 const tempDir = path.join(os.homedir(), '.devcontainer');
@@ -388,7 +235,7 @@ function activate(context) {
                 const tempDevcontainerContent = {
                     "name": isArm ? "rsm-msba-arm" : "rsm-msba-intel",
                     "dockerComposeFile": [
-                        `${wslPaths.wslHome}/.rsm-vscode/${composeFileName}`  // Use WSL path
+                        path.join(context.extensionPath, 'docker-compose', composeFileName)
                     ],
                     "service": "rsm-msba",
                     "workspaceFolder": workspaceFolder,
@@ -401,37 +248,27 @@ function activate(context) {
                                 "ms-vscode-remote.remote-containers"
                             ]
                         }
-                    },
-                    "remoteEnv": {
-                        "HOME": "/home/jovyan"
                     }
                 };
 
-                // Write devcontainer.json to WSL
-                const devcontainerPath = `${wslPaths.wslHome}/.rsm-vscode/devcontainer.json`;
-                await writeFileToWSL(tempDevcontainerContent, devcontainerPath);
-
-                // Create workspace file content
-                const workspaceContent = {
-                    "folders": [{ "path": "." }],
-                    "settings": {},
-                    "extensions": {
-                        "recommendations": ["ms-vscode-remote.remote-containers"]
-                    }
-                };
-
-                // Write workspace file to WSL
-                const workspacePath = `${wslPaths.wslHome}/.rsm-vscode/rsm.code-workspace`;
-                await writeFileToWSL(workspaceContent, workspacePath);
-
-                // Connect to container using the workspace file
-                await vscode.commands.executeCommand(
-                    'remote-containers.openWorkspace',
-                    vscode.Uri.file(`\\\\wsl.localhost\\Ubuntu-22.04${workspacePath}`)
+                fs.writeFileSync(
+                    path.join(tempDir, 'devcontainer.json'),
+                    JSON.stringify(tempDevcontainerContent, null, 2)
                 );
+
+                try {
+                    // Connect to container directly without asking
+                    await vscode.commands.executeCommand(
+                        'remote-containers.openFolder',
+                        vscode.Uri.file(os.homedir())
+                    );
+                } catch (error) {
+                    log('Error attaching to container:', true);
+                    log(`Full error: ${error.stack}`);
+                }
             } catch (error) {
-                log('Error attaching to container:', true);
-                log(`Full error: ${error.stack}`);
+                log(`Failed to start container: ${error.message}`, true);  // Show in popup
+                log(`Full error: ${error.stack}`);  // Full stack trace in log only
             }
         });
     });
@@ -613,29 +450,13 @@ function activate(context) {
             return;
         }
 
-        // Check if we're running in WSL2
-        const wsl2Enabled = await isWSL2();
-        let hostHomeDir = os.homedir();
-        if (wsl2Enabled) {
-            const wslHome = await getWSLHomeDir();
-            if (wslHome) {
-                hostHomeDir = wslHome;
-                log(`Using WSL2 home directory: ${hostHomeDir}`);
-            } else {
-                log('Failed to get WSL2 home directory, falling back to Windows home');
-            }
-        }
-
         // Check current folder for workspace files
         const currentFolder = vscode.workspace.workspaceFolders?.[0];
         if (currentFolder) {
             const currentPath = currentFolder.uri.fsPath;
             // Convert container path to local path if needed
-            let currentLocalPath = currentPath.includes('/home/jovyan') ?
-                currentPath.replace('/home/jovyan', hostHomeDir) : currentPath;
-            if (wsl2Enabled) {
-                currentLocalPath = await convertToWindowsPath(currentLocalPath);
-            }
+            const currentLocalPath = currentPath.includes('/home/jovyan') ?
+                currentPath.replace('/home/jovyan', os.homedir()) : currentPath;
             const currentFolderName = path.basename(currentLocalPath);
 
             try {
@@ -656,7 +477,7 @@ function activate(context) {
                             const isArm = os.arch() === 'arm64';
                             const composeFileName = isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml';
 
-                            // Create .devcontainer.json with WSL2 settings if needed
+                            // Create .devcontainer.json
                             const devcontainerContent = {
                                 "name": isArm ? "rsm-msba-arm" : "rsm-msba-intel",
                                 "dockerComposeFile": [
@@ -674,11 +495,7 @@ function activate(context) {
                                             "ms-vscode-remote.remote-containers"
                                         ]
                                     }
-                                },
-                                // Add WSL2 specific settings
-                                "remoteEnv": wsl2Enabled ? {
-                                    "HOME": "/home/jovyan"
-                                } : undefined
+                                }
                             };
 
                             // Create workspace file with metadata
@@ -725,17 +542,14 @@ function activate(context) {
             canSelectFiles: false,
             canSelectFolders: true,
             canSelectMany: false,
-            defaultUri: vscode.Uri.file(hostHomeDir),
+            defaultUri: vscode.Uri.file(os.homedir()),
             openLabel: 'Select Project Folder'
         };
 
         const result = await vscode.window.showOpenDialog(options);
         if (result && result[0]) {
-            let localPath = result[0].fsPath;
-            if (wsl2Enabled) {
-                localPath = await convertToWSLPath(localPath);
-            }
-            const containerPath = localPath.replace(hostHomeDir, '/home/jovyan');
+            const localPath = result[0].fsPath;
+            const containerPath = localPath.replace(os.homedir(), '/home/jovyan');
             const folderName = path.basename(localPath);
             
             // Store the new workspace
@@ -790,7 +604,7 @@ function activate(context) {
                 }
 
                 if (needCreateOurs) {
-                    // Create .devcontainer.json in the target folder with WSL2 settings if needed
+                    // Create .devcontainer.json in the target folder
                     const isArm = os.arch() === 'arm64';
                     const composeFileName = isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml';
                     const devcontainerContent = {
@@ -810,11 +624,7 @@ function activate(context) {
                                     "ms-vscode-remote.remote-containers"
                                 ]
                             }
-                        },
-                        // Add WSL2 specific settings
-                        "remoteEnv": wsl2Enabled ? {
-                            "HOME": "/home/jovyan"
-                        } : undefined
+                        }
                     };
 
                     // Create our workspace file with metadata
@@ -847,16 +657,10 @@ function activate(context) {
                 }
 
                 if (workspaceToUse) {
-                    // Convert workspace file path to Windows path if needed
-                    let workspaceFilePath = workspaceToUse;
-                    if (wsl2Enabled) {
-                        workspaceFilePath = await convertToWindowsPath(workspaceToUse);
-                    }
-                    
                     // Open the workspace file directly in container
                     await vscode.commands.executeCommand(
                         'remote-containers.openWorkspace',
-                        vscode.Uri.file(workspaceFilePath)
+                        vscode.Uri.file(workspaceToUse)
                     );
 
                     log(`Workspace changed to: ${containerPath}`);

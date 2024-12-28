@@ -73,16 +73,6 @@ function activate(context) {
                 if (oldWorkspace !== workspacePath) {
                     log(`Window changed, current workspace: ${workspacePath}`);
                     log(`Previous workspace was: ${oldWorkspace}`);
-                    
-                    // Show info message about the change
-                    vscode.window.showInformationMessage(
-                        `Active workspace is now: ${workspacePath}`,
-                        'Show Details'
-                    ).then(selection => {
-                        if (selection === 'Show Details') {
-                            outputChannel.show();
-                        }
-                    });
                 }
             }
         }
@@ -231,9 +221,19 @@ function activate(context) {
                     }
                 }
 
-                // Create devcontainer.json content
-                const devcontainerContent = {
-                    "name": imageName,
+                // Convert container path to local path
+                const localPath = workspaceFolder.replace('/home/jovyan', os.homedir());
+                const folderName = path.basename(localPath);
+
+                // Create temporary .devcontainer directory and file for initial connection
+                const tempDir = path.join(os.homedir(), '.devcontainer');
+                if (!fs.existsSync(tempDir)) {
+                    fs.mkdirSync(tempDir);
+                }
+
+                // Create temporary devcontainer.json content
+                const tempDevcontainerContent = {
+                    "name": isArm ? "rsm-msba-arm" : "rsm-msba-intel",
                     "dockerComposeFile": [
                         path.join(context.extensionPath, 'docker-compose', composeFileName)
                     ],
@@ -242,12 +242,6 @@ function activate(context) {
                     "remoteUser": "jovyan",
                     "overrideCommand": false,
                     "remoteWorkspaceFolder": workspaceFolder,
-                    "remoteEnv": {
-                        "VSCODE_REMOTE_CONTAINERS_DISPLAY_NAME": imageName
-                    },
-                    "containerEnv": {
-                        "VSCODE_REMOTE_CONTAINERS_DISPLAY_NAME": imageName
-                    },
                     "customizations": {
                         "vscode": {
                             "extensions": [
@@ -257,14 +251,9 @@ function activate(context) {
                     }
                 };
 
-                // Create temporary .devcontainer directory and file
-                const tempDir = path.join(os.homedir(), '.devcontainer');
-                if (!fs.existsSync(tempDir)) {
-                    fs.mkdirSync(tempDir);
-                }
                 fs.writeFileSync(
                     path.join(tempDir, 'devcontainer.json'),
-                    JSON.stringify(devcontainerContent, null, 2)
+                    JSON.stringify(tempDevcontainerContent, null, 2)
                 );
 
                 try {
@@ -461,6 +450,91 @@ function activate(context) {
             return;
         }
 
+        // Check current folder for workspace files
+        const currentFolder = vscode.workspace.workspaceFolders?.[0];
+        if (currentFolder) {
+            const currentPath = currentFolder.uri.fsPath;
+            // Convert container path to local path if needed
+            const currentLocalPath = currentPath.includes('/home/jovyan') ?
+                currentPath.replace('/home/jovyan', os.homedir()) : currentPath;
+            const currentFolderName = path.basename(currentLocalPath);
+
+            try {
+                const hasWorkspaceFile = fs.readdirSync(currentLocalPath)
+                    .some(f => f.endsWith('.code-workspace'));
+
+                // If no workspace file exists, ask if user wants to create one
+                if (!hasWorkspaceFile) {
+                    const createFiles = await vscode.window.showQuickPick(
+                        ['Yes', 'No'],
+                        {
+                            placeHolder: `Would you like to create workspace configuration files in "${currentFolderName}" before switching?`
+                        }
+                    );
+
+                    if (createFiles === 'Yes') {
+                        try {
+                            const isArm = os.arch() === 'arm64';
+                            const composeFileName = isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml';
+
+                            // Create .devcontainer.json
+                            const devcontainerContent = {
+                                "name": isArm ? "rsm-msba-arm" : "rsm-msba-intel",
+                                "dockerComposeFile": [
+                                    path.join(context.extensionPath, 'docker-compose', composeFileName)
+                                ],
+                                "service": "rsm-msba",
+                                "workspaceFolder": currentPath,
+                                "remoteUser": "jovyan",
+                                "overrideCommand": false,
+                                "remoteWorkspaceFolder": currentPath,
+                                "shutdownAction": "none",
+                                "customizations": {
+                                    "vscode": {
+                                        "extensions": [
+                                            "ms-vscode-remote.remote-containers"
+                                        ]
+                                    }
+                                }
+                            };
+
+                            // Create workspace file with metadata
+                            const workspaceContent = {
+                                "folders": [
+                                    {
+                                        "path": "."
+                                    }
+                                ],
+                                "settings": {
+                                    "remote.containers.defaultExtensions": [
+                                        "ms-vscode-remote.remote-containers"
+                                    ]
+                                },
+                                "metadata": {
+                                    "rsmExtension": true,
+                                    "created": new Date().toISOString()
+                                }
+                            };
+
+                            // Write both files using local path
+                            const devcontainerPath = path.join(currentLocalPath, '.devcontainer.json');
+                            const workspaceFile = path.join(currentLocalPath, `${currentFolderName}.code-workspace`);
+
+                            fs.writeFileSync(devcontainerPath, JSON.stringify(devcontainerContent, null, 2));
+                            fs.writeFileSync(workspaceFile, JSON.stringify(workspaceContent, null, 2));
+
+                            log(`Created workspace file in current folder: ${workspaceFile}`);
+                            log(`Created devcontainer file in current folder: ${devcontainerPath}`);
+                        } catch (error) {
+                            log(`Error creating workspace files in current folder: ${error.message}`);
+                        }
+                    }
+                }
+            } catch (error) {
+                log(`Error checking current folder: ${error.message}`);
+            }
+        }
+
         const oldWorkspace = globalState.get('lastWorkspaceFolder');
         log(`Current workspace is: ${oldWorkspace || 'none'}`);
 
@@ -483,59 +557,117 @@ function activate(context) {
             await globalState.update('lastWorkspaceFolder', containerPath);
             
             try {
-                // Create .devcontainer.json in the target folder
-                const isArm = os.arch() === 'arm64';
-                const composeFileName = isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml';
-                const devcontainerContent = {
-                    "name": "RSM-MSBA",
-                    "dockerComposeFile": [
-                        path.join(context.extensionPath, 'docker-compose', composeFileName)
-                    ],
-                    "service": "rsm-msba",
-                    "workspaceFolder": containerPath,
-                    "remoteUser": "jovyan",
-                    "overrideCommand": false,
-                    "remoteWorkspaceFolder": containerPath,
-                    "shutdownAction": "none",
-                    "customizations": {
-                        "vscode": {
-                            "extensions": [
+                // Check for existing workspace files
+                const ourWorkspaceFile = path.join(localPath, `${folderName}.code-workspace`);
+                const existingWorkspaceFiles = fs.readdirSync(localPath)
+                    .filter(f => f.endsWith('.code-workspace'))
+                    .map(f => path.join(localPath, f));
+
+                let workspaceToUse = null;
+                let needCreateOurs = true;
+
+                // Check if our workspace file exists
+                if (existingWorkspaceFiles.includes(ourWorkspaceFile)) {
+                    // Read it to verify it's ours
+                    const content = JSON.parse(fs.readFileSync(ourWorkspaceFile, 'utf8'));
+                    if (content.metadata?.rsmExtension === true) {
+                        workspaceToUse = ourWorkspaceFile;
+                        needCreateOurs = false;
+                        log('Found our workspace file, using it directly');
+                    }
+                }
+
+                // If we don't have our file but others exist
+                if (!workspaceToUse && existingWorkspaceFiles.length > 0) {
+                    const useExisting = await vscode.window.showQuickPick(
+                        ['Create new workspace file', 'Use existing workspace file'],
+                        {
+                            placeHolder: 'Found existing workspace file(s). What would you like to do?'
+                        }
+                    );
+
+                    if (useExisting === 'Use existing workspace file') {
+                        // If multiple workspace files exist, let user pick
+                        if (existingWorkspaceFiles.length === 1) {
+                            workspaceToUse = existingWorkspaceFiles[0];
+                        } else {
+                            const selected = await vscode.window.showQuickPick(
+                                existingWorkspaceFiles.map(f => path.basename(f)),
+                                { placeHolder: 'Select workspace file to use' }
+                            );
+                            if (selected) {
+                                workspaceToUse = path.join(localPath, selected);
+                            }
+                        }
+                        needCreateOurs = false;
+                    }
+                }
+
+                if (needCreateOurs) {
+                    // Create .devcontainer.json in the target folder
+                    const isArm = os.arch() === 'arm64';
+                    const composeFileName = isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml';
+                    const devcontainerContent = {
+                        "name": isArm ? "rsm-msba-arm" : "rsm-msba-intel",
+                        "dockerComposeFile": [
+                            path.join(context.extensionPath, 'docker-compose', composeFileName)
+                        ],
+                        "service": "rsm-msba",
+                        "workspaceFolder": containerPath,
+                        "remoteUser": "jovyan",
+                        "overrideCommand": false,
+                        "remoteWorkspaceFolder": containerPath,
+                        "shutdownAction": "none",
+                        "customizations": {
+                            "vscode": {
+                                "extensions": [
+                                    "ms-vscode-remote.remote-containers"
+                                ]
+                            }
+                        }
+                    };
+
+                    // Create our workspace file with metadata
+                    const workspaceContent = {
+                        "folders": [
+                            {
+                                "path": "."
+                            }
+                        ],
+                        "settings": {
+                            "remote.containers.defaultExtensions": [
                                 "ms-vscode-remote.remote-containers"
                             ]
+                        },
+                        "metadata": {
+                            "rsmExtension": true,
+                            "created": new Date().toISOString()
                         }
-                    }
-                };
+                    };
 
-                // Create workspace file
-                const workspaceFile = path.join(localPath, `${folderName}.code-workspace`);
-                const workspaceContent = {
-                    "folders": [
-                        {
-                            "path": "."
-                        }
-                    ],
-                    "settings": {
-                        "remote.containers.defaultExtensions": [
-                            "ms-vscode-remote.remote-containers"
-                        ]
-                    }
-                };
-                
-                // Write both files
-                const devcontainerPath = path.join(localPath, '.devcontainer.json');
-                fs.writeFileSync(devcontainerPath, JSON.stringify(devcontainerContent, null, 2));
-                fs.writeFileSync(workspaceFile, JSON.stringify(workspaceContent, null, 2));
-                
-                log(`Created workspace file: ${workspaceFile}`);
-                log(`Created devcontainer file: ${devcontainerPath}`);
+                    // Write both files
+                    const devcontainerPath = path.join(localPath, '.devcontainer.json');
+                    fs.writeFileSync(devcontainerPath, JSON.stringify(devcontainerContent, null, 2));
+                    fs.writeFileSync(ourWorkspaceFile, JSON.stringify(workspaceContent, null, 2));
 
-                // Open the workspace file directly in container
-                await vscode.commands.executeCommand(
-                    'vscode.openFolder',
-                    vscode.Uri.file(workspaceFile)
-                );
-                
-                log(`Workspace changed to: ${containerPath}`);
+                    log(`Created workspace file: ${ourWorkspaceFile}`);
+                    log(`Created devcontainer file: ${devcontainerPath}`);
+
+                    workspaceToUse = ourWorkspaceFile;
+                }
+
+                if (workspaceToUse) {
+                    // Open the workspace file directly in container
+                    await vscode.commands.executeCommand(
+                        'remote-containers.openWorkspace',
+                        vscode.Uri.file(workspaceToUse)
+                    );
+
+                    log(`Workspace changed to: ${containerPath}`);
+                } else {
+                    log('No workspace file selected or created');
+                    vscode.window.showErrorMessage('Workspace change cancelled: No workspace file selected or created');
+                }
             } catch (error) {
                 log(`Error during workspace change: ${error.message}`);
                 vscode.window.showErrorMessage(`Failed to change workspace: ${error.message}`);

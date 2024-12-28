@@ -1,6 +1,6 @@
 {
     "name": "rsm-vscode",
-    "displayName": "RSM VS Code",
+    "displayName": "VS Code extension for rsm-msba docker container",
     "description": "Start RSM containers and tools from VS Code",
     "version": "0.0.1",
     "publisher": "vnijs",
@@ -31,39 +31,31 @@
         "commands": [
             {
                 "command": "rsm-vscode.startContainer",
-                "title": "RSM: Start and Attach to Container"
+                "title": "RSM: Attach to Container"
             },
             {
                 "command": "rsm-vscode.stopContainer",
-                "title": "RSM: Stop and Detach from Container"
+                "title": "RSM: Detach from Container"
             },
             {
                 "command": "rsm-vscode.startRadiant",
-                "title": "RSM: Start Radiant"
+                "title": "RSM: Start Radiant (radiant)"
             },
             {
                 "command": "rsm-vscode.startGitGadget",
-                "title": "RSM: Start GitGadget"
+                "title": "RSM: Start GitGadget (gitgadget)"
             },
             {
                 "command": "rsm-vscode.cleanPackages",
-                "title": "RSM: Remove locally installed R and Python packages"
+                "title": "RSM: Uninstall local R and Python packages (clean)"
             },
             {
                 "command": "rsm-vscode.setupContainer",
-                "title": "RSM: Setup the RSM-MSBA docker container"
+                "title": "RSM: Setup rsm-msba container (setup)"
             },
             {
                 "command": "rsm-vscode.changeWorkspace",
-                "title": "RSM: Change Workspace Folder"
-            },
-            {
-                "command": "rsm-vscode.debugEnv",
-                "title": "RSM: Debug Environment"
-            },
-            {
-                "command": "rsm-vscode.debugContainer",
-                "title": "RSM: Debug Container Status"
+                "title": "RSM: Change workspace folder"
             }
         ]
     },

@@ -1,0 +1,98 @@
+{
+    "name": "rsm-vscode",
+    "displayName": "RSM VS Code",
+    "description": "Start RSM containers and tools from VS Code",
+    "version": "0.0.1",
+    "publisher": "vnijs",
+    "license": "MIT",
+    "enableProposedApi": true,
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/vnijs/rsm-vscode"
+    },
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished",
+        "onCommand:rsm-vscode.startContainer",
+        "onCommand:rsm-vscode.stopContainer",
+        "onCommand:rsm-vscode.startRadiant",
+        "onCommand:rsm-vscode.startGitGadget",
+        "onCommand:rsm-vscode.cleanPackages",
+        "onCommand:rsm-vscode.setupContainer",
+        "onCommand:rsm-vscode.debugEnv"
+    ],
+    "main": "./extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "rsm-vscode.startContainer",
+                "title": "RSM: Start and Attach to Container"
+            },
+            {
+                "command": "rsm-vscode.stopContainer",
+                "title": "RSM: Stop and Detach from Container"
+            },
+            {
+                "command": "rsm-vscode.startRadiant",
+                "title": "RSM: Start Radiant"
+            },
+            {
+                "command": "rsm-vscode.startGitGadget",
+                "title": "RSM: Start GitGadget"
+            },
+            {
+                "command": "rsm-vscode.cleanPackages",
+                "title": "RSM: Remove locally installed R and Python packages"
+            },
+            {
+                "command": "rsm-vscode.setupContainer",
+                "title": "RSM: Setup the RSM-MSBA docker container"
+            },
+            {
+                "command": "rsm-vscode.changeWorkspace",
+                "title": "RSM: Change Workspace Folder"
+            },
+            {
+                "command": "rsm-vscode.debugEnv",
+                "title": "RSM: Debug Environment"
+            },
+            {
+                "command": "rsm-vscode.debugContainer",
+                "title": "RSM: Debug Container Status"
+            }
+        ]
+    },
+    "scripts": {
+        "lint": "eslint .",
+        "pretest": "npm run lint",
+        "package": "cross-env NODE_NO_WARNINGS=1 vsce package",
+        "publish": "cross-env NODE_NO_WARNINGS=1 vsce publish"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.85.0",
+        "@types/node": "16.x",
+        "eslint": "^8.47.0",
+        "typescript": "^5.1.6",
+        "@vscode/vsce": "^2.24.0",
+        "cross-env": "^7.0.3"
+    },
+    "capabilities": {
+        "virtualWorkspaces": true,
+        "untrustedWorkspaces": {
+            "supported": true
+        }
+    },
+    "extensionKind": ["ui"],
+    "extensionDependencies": [
+        "ms-vscode-remote.remote-containers",
+        "ms-vscode-remote.vscode-remote-extensionpack"
+    ],
+    "enabledApiProposals": [
+        "resolvers"
+    ]
+} 

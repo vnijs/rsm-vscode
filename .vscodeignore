@@ -1,0 +1,12 @@
+.vscode/**
+.vscode-test/**
+node_modules/**
+.gitignore
+.git/**
+.eslintrc.json
+jsconfig.json
+vsc-extension-quickstart.md
+.vsix
+
+# Make sure to NOT ignore these
+!docker-compose/** 

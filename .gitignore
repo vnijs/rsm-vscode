@@ -1,0 +1,12 @@
+wsl-files/
+node_modules/
+out/
+dist/
+*.vsix
+.DS_Store
+.vscode-test/
+test-results/
+coverage/
+.env
+*.log
+

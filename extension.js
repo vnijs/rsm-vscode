@@ -1,11 +1,11 @@
 const vscode = require('vscode');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.3.14";
+const EXTENSION_VERSION = "2024.1.3.22";
 
 // Global configuration storage
 let globalState;
@@ -127,14 +127,72 @@ async function isInContainer() {
 
 // Helper function to write file
 async function writeFile(content, filePath) {
+    // If we're in the container, try multiple approaches
+    if (isRemoteSession()) {
+        log('Attempting to write file using multiple approaches:');
+        
+        // 1. Try direct write first
+        try {
+            log(`METHOD 1 - Direct write - Trying path: ${filePath}`);
+            fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
+            log(`SUCCESS: Method 1 - Direct write worked at: ${filePath}`);
+            vscode.window.showInformationMessage(`File written using direct write at: ${filePath}`);
+            return true;
+        } catch (error) {
+            log(`FAILED: Method 1 - Direct write failed: ${error.message}`);
+            
+            // 2. Try WSL write method (same as initial attachment)
+            try {
+                log(`METHOD 2 - WSL write - Trying path: ${filePath}`);
+                const writeCmd = `wsl.exe bash -c 'cat > "${filePath}"'`;
+                log(`Using command: ${writeCmd}`);
+                
+                const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${filePath}"`]);
+                
+                proc.stdin.write(JSON.stringify(content, null, 2));
+                proc.stdin.end();
+                
+                await new Promise((resolve, reject) => {
+                    proc.on('close', (code) => {
+                        log(`WSL write process exited with code: ${code}`);
+                        if (code === 0) {
+                            resolve();
+                        } else {
+                            reject(new Error(`WSL write failed, exit code: ${code}`));
+                        }
+                    });
+                });
+                
+                log(`SUCCESS: Method 2 - WSL write worked at: ${filePath}`);
+                vscode.window.showInformationMessage(`File written using WSL write at: ${filePath}`);
+                return true;
+            } catch (error2) {
+                log(`FAILED: Method 2 - WSL write failed: ${error2.message}`);
+                
+                // 3. Try WSL network path as last resort
+                try {
+                    const networkPath = `//wsl.localhost/Ubuntu-22.04${filePath}`;
+                    log(`METHOD 3 - Network path - Trying path: ${networkPath}`);
+                    fs.writeFileSync(networkPath, JSON.stringify(content, null, 2));
+                    log(`SUCCESS: Method 3 - Network path worked at: ${networkPath}`);
+                    vscode.window.showInformationMessage(`File written using WSL network path at: ${networkPath}`);
+                    return true;
+                } catch (error3) {
+                    log(`FAILED: Method 3 - Network path failed: ${error3.message}`);
+                    throw new Error('Failed to write file using any available method');
+                }
+            }
+        }
+    }
+    
+    // If on Windows but not in container, use WSL
     if (isWindows) {
         // Use cat to write the file directly in WSL
         const writeCmd = `wsl.exe bash -c 'cat > "${filePath}"'`;
         log(`Writing file using command: ${writeCmd}`);
         log(`Writing content: ${JSON.stringify(content, null, 2)}`);
         
-        // Use child_process.spawn to pipe the file content
-        const spawn = require('child_process').spawn;
+        // Use spawn to pipe the file content
         const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${filePath}"`]);
         
         // Write the content
@@ -154,13 +212,14 @@ async function writeFile(content, filePath) {
         });
         
         log(`Successfully wrote file to WSL path: ${filePath}`);
+        vscode.window.showInformationMessage(`File written using WSL write at: ${filePath}`);
         return true;
     } else {
-        const dir = path.dirname(filePath);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
+        // For macOS, write directly
+        log(`Writing file directly at: ${filePath}`);
         fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
+        log(`Successfully wrote file at: ${filePath}`);
+        vscode.window.showInformationMessage(`File written using direct write at: ${filePath}`);
         return true;
     }
 }
@@ -255,7 +314,8 @@ function activate(context) {
         if (await isInContainer()) {
             const currentFolder = vscode.workspace.workspaceFolders?.[0];
             if (currentFolder) {
-                const workspacePath = currentFolder.uri.fsPath;
+                // Normalize path to use forward slashes
+                const workspacePath = currentFolder.uri.fsPath.replace(/\\/g, '/');
                 const oldWorkspace = globalState.get('lastWorkspaceFolder');
                 
                 // Show confirmation dialog
@@ -326,7 +386,7 @@ function activate(context) {
         log(`Current path: ${currentPath}`);
 
         // Convert paths for different uses - using platform-specific utilities
-        const wslPath = paths.toWSLPath(currentPath);
+        const wslPath = isWindows ? paths.toWSLPath(currentPath) : currentPath;
         const containerPath = paths.toContainerPath(currentPath);
         
         log(`Path for writing: ${wslPath}`);
@@ -621,16 +681,42 @@ function activate(context) {
             });
 
             if (result && result[0]) {
-                const newPath = result[0].fsPath;
+                // Normalize path to use forward slashes
+                const newPath = result[0].fsPath.replace(/\\/g, '/');
                 log(`Selected new workspace path: ${newPath}`);
 
-                // When in container, the path is already in the correct format
+                // When in container, convert /home/jovyan to /home/vnijs for file writing
                 const containerPath = newPath;
+                const wslPath = containerPath.replace('/home/jovyan/', '/home/vnijs/');
                 const projectName = path.basename(containerPath);
-                const workspaceFile = path.join(containerPath, `${projectName}.code-workspace`);
                 
                 log(`Container path: ${containerPath}`);
-                log(`Creating workspace file at: ${workspaceFile}`);
+                log(`WSL path for writing: ${wslPath}`);
+
+                // Determine architecture and compose file
+                const isArm = os.arch() === 'arm64';
+                const composeFile = container.getComposeFile(isArm, context);
+                const wslComposeFile = paths.toWSLMountPath(composeFile);
+                log(`Using compose file: ${wslComposeFile}`);
+
+                // Create .devcontainer.json content
+                const devcontainerContent = {
+                    "name": isArm ? "rsm-msba-arm" : "rsm-msba-intel",
+                    "dockerComposeFile": [wslComposeFile],
+                    "service": "rsm-msba",
+                    "workspaceFolder": containerPath,
+                    "remoteUser": "jovyan",
+                    "overrideCommand": false,
+                    "remoteWorkspaceFolder": containerPath,
+                    "customizations": {
+                        "vscode": {
+                            "extensions": ["ms-vscode-remote.remote-containers"]
+                        }
+                    },
+                    "remoteEnv": {
+                        "HOME": "/home/jovyan"
+                    }
+                };
 
                 // Create workspace content
                 const workspaceContent = {
@@ -650,20 +736,20 @@ function activate(context) {
                     }
                 };
 
-                // Create directory if it doesn't exist
-                const dir = path.dirname(workspaceFile);
-                if (!fs.existsSync(dir)) {
-                    fs.mkdirSync(dir, { recursive: true });
-                }
+                // Write both files using our existing writeFile function but with WSL paths
+                const devcontainerFile = path.posix.join(wslPath, '.devcontainer.json');
+                const workspaceFile = path.posix.join(wslPath, `${projectName}.code-workspace`);
+                
+                log(`Creating .devcontainer.json at: ${devcontainerFile}`);
+                await writeFile(devcontainerContent, devcontainerFile);
+                
+                log(`Creating workspace file at: ${workspaceFile}`);
+                await writeFile(workspaceContent, workspaceFile);
 
-                // Write workspace file directly since we're in the container
-                fs.writeFileSync(workspaceFile, JSON.stringify(workspaceContent, null, 2));
-                log(`Created workspace file at: ${workspaceFile}`);
-
-                // Open the workspace directly since we're already in the container
+                // Open the folder in the container
                 await vscode.commands.executeCommand(
                     'vscode.openFolder',
-                    vscode.Uri.file(containerPath),
+                    result[0],
                     { forceReuseWindow: true }
                 );
                 

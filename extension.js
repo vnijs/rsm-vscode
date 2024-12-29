@@ -685,9 +685,12 @@ function activate(context) {
                 const newPath = result[0].fsPath.replace(/\\/g, '/');
                 log(`Selected new workspace path: ${newPath}`);
 
-                // When in container, convert /home/jovyan to /home/vnijs for file writing
+                // When in container, convert paths appropriately for the platform
                 const containerPath = newPath;
-                const wslPath = containerPath.replace('/home/jovyan/', '/home/vnijs/');
+                const wslPath = isWindows ?
+                    containerPath.replace('/home/jovyan/', '/home/vnijs/') :
+                    containerPath.replace('/home/jovyan', os.homedir());  // Changed this line
+
                 const projectName = path.basename(containerPath);
                 
                 log(`Container path: ${containerPath}`);
@@ -747,12 +750,21 @@ function activate(context) {
                 await writeFile(workspaceContent, workspaceFile);
 
                 // Open the folder in the container
-                await vscode.commands.executeCommand(
-                    'vscode.openFolder',
-                    result[0],
-                    { forceReuseWindow: true }
-                );
-                
+                if (isMacOS) {
+                    log('Using macOS-specific workspace opening');
+                    await vscode.commands.executeCommand(
+                        'remote-containers.openWorkspace',
+                        vscode.Uri.file(workspaceFile)
+                    );
+                } else {
+                    log('Using default workspace opening');
+                    await vscode.commands.executeCommand(
+                        'vscode.openFolder',
+                        result[0],
+                        { forceReuseWindow: true }
+                    );
+                }
+
                 log(`Workspace changed to: ${containerPath}`);
             } else {
                 log('No workspace folder selected');
@@ -824,4 +836,4 @@ function deactivate() {}
 module.exports = {
     activate,
     deactivate
-} 
+}

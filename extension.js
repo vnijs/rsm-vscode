@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.3.22";
+const EXTENSION_VERSION = "2024.1.3.28";
 
 // Global configuration storage
 let globalState;
@@ -127,100 +127,92 @@ async function isInContainer() {
 
 // Helper function to write file
 async function writeFile(content, filePath) {
+    // Add write method info to content
+    const addWriteMethodInfo = (content, method) => {
+        return {
+            ...content,
+            "__writeMethod": `Written by ${method} at ${new Date().toISOString()}`
+        };
+    };
+
     // If we're in the container, try multiple approaches
     if (isRemoteSession()) {
-        log('Attempting to write file using multiple approaches:');
+        log('=== File Write Attempt ===');
+        log(`Attempting to write file: ${filePath}`);
         
         // 1. Try direct write first
         try {
-            log(`METHOD 1 - Direct write - Trying path: ${filePath}`);
-            fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
-            log(`SUCCESS: Method 1 - Direct write worked at: ${filePath}`);
-            vscode.window.showInformationMessage(`File written using direct write at: ${filePath}`);
+            log(`\nMETHOD 1 - Direct write`);
+            log(`Attempting path: ${filePath}`);
+            const contentWithMethod = addWriteMethodInfo(content, "Method 1 - Direct write");
+            fs.writeFileSync(filePath, JSON.stringify(contentWithMethod, null, 2));
+            log(`SUCCESS: Direct write worked at: ${filePath}`);
             return true;
         } catch (error) {
-            log(`FAILED: Method 1 - Direct write failed: ${error.message}`);
+            log(`FAILED: Direct write failed`);
+            log(`Error: ${error.message}`);
             
-            // 2. Try WSL write method (same as initial attachment)
+            // 3. Try WSL network path as last resort
             try {
-                log(`METHOD 2 - WSL write - Trying path: ${filePath}`);
-                const writeCmd = `wsl.exe bash -c 'cat > "${filePath}"'`;
-                log(`Using command: ${writeCmd}`);
-                
-                const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${filePath}"`]);
-                
-                proc.stdin.write(JSON.stringify(content, null, 2));
-                proc.stdin.end();
-                
-                await new Promise((resolve, reject) => {
-                    proc.on('close', (code) => {
-                        log(`WSL write process exited with code: ${code}`);
-                        if (code === 0) {
-                            resolve();
-                        } else {
-                            reject(new Error(`WSL write failed, exit code: ${code}`));
-                        }
-                    });
-                });
-                
-                log(`SUCCESS: Method 2 - WSL write worked at: ${filePath}`);
-                vscode.window.showInformationMessage(`File written using WSL write at: ${filePath}`);
+                log(`\nMETHOD 3 - Network path`);
+                const networkPath = `//wsl.localhost/Ubuntu-22.04${filePath}`;
+                log(`Attempting path: ${networkPath}`);
+                const contentWithMethod = addWriteMethodInfo(content, "Method 3 - Network path");
+                fs.writeFileSync(networkPath, JSON.stringify(contentWithMethod, null, 2));
+                log(`SUCCESS: Network path worked at: ${networkPath}`);
                 return true;
-            } catch (error2) {
-                log(`FAILED: Method 2 - WSL write failed: ${error2.message}`);
-                
-                // 3. Try WSL network path as last resort
-                try {
-                    const networkPath = `//wsl.localhost/Ubuntu-22.04${filePath}`;
-                    log(`METHOD 3 - Network path - Trying path: ${networkPath}`);
-                    fs.writeFileSync(networkPath, JSON.stringify(content, null, 2));
-                    log(`SUCCESS: Method 3 - Network path worked at: ${networkPath}`);
-                    vscode.window.showInformationMessage(`File written using WSL network path at: ${networkPath}`);
-                    return true;
-                } catch (error3) {
-                    log(`FAILED: Method 3 - Network path failed: ${error3.message}`);
-                    throw new Error('Failed to write file using any available method');
-                }
+            } catch (error3) {
+                log(`FAILED: Network path failed`);
+                log(`Error: ${error3.message}`);
+                throw new Error('Failed to write file using any available method');
             }
         }
     }
     
     // If on Windows but not in container, use WSL
     if (isWindows) {
-        // Use cat to write the file directly in WSL
+        const contentWithMethod = addWriteMethodInfo(content, "WSL write (not in container)");
         const writeCmd = `wsl.exe bash -c 'cat > "${filePath}"'`;
         log(`Writing file using command: ${writeCmd}`);
-        log(`Writing content: ${JSON.stringify(content, null, 2)}`);
         
-        // Use spawn to pipe the file content
-        const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${filePath}"`]);
-        
-        // Write the content
-        proc.stdin.write(JSON.stringify(content, null, 2));
-        proc.stdin.end();
-        
-        // Wait for the process to complete
-        await new Promise((resolve, reject) => {
-            proc.on('close', (code) => {
-                log(`Process exited with code: ${code}`);
-                if (code === 0) {
-                    resolve();
-                } else {
-                    reject(new Error(`Failed to write file, exit code: ${code}`));
-                }
+        try {
+            // Use spawn to pipe the file content
+            const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${filePath}"`]);
+            
+            // Write the content
+            proc.stdin.write(JSON.stringify(contentWithMethod, null, 2));
+            proc.stdin.end();
+            
+            // Wait for the process to complete
+            await new Promise((resolve, reject) => {
+                proc.on('close', (code) => {
+                    log(`Process exited with code: ${code}`);
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        reject(new Error(`Failed to write file, exit code: ${code}`));
+                    }
+                });
             });
-        });
-        
-        log(`Successfully wrote file to WSL path: ${filePath}`);
-        vscode.window.showInformationMessage(`File written using WSL write at: ${filePath}`);
-        return true;
+            
+            log(`Successfully wrote file to WSL path: ${filePath}`);
+            return true;
+        } catch (error) {
+            log(`Failed to write file: ${error.message}`);
+            throw error;
+        }
     } else {
         // For macOS, write directly
-        log(`Writing file directly at: ${filePath}`);
-        fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
-        log(`Successfully wrote file at: ${filePath}`);
-        vscode.window.showInformationMessage(`File written using direct write at: ${filePath}`);
-        return true;
+        try {
+            const contentWithMethod = addWriteMethodInfo(content, "Direct write (macOS)");
+            log(`Writing file directly at: ${filePath}`);
+            fs.writeFileSync(filePath, JSON.stringify(contentWithMethod, null, 2));
+            log(`Successfully wrote file at: ${filePath}`);
+            return true;
+        } catch (error) {
+            log(`Failed to write file: ${error.message}`);
+            throw error;
+        }
     }
 }
 

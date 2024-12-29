@@ -322,7 +322,7 @@ function activate(context) {
     // Command to start Radiant
     let startRadiant = vscode.commands.registerCommand('rsm-vscode.startRadiant', async function () {
         if (!(await isInContainer())) {
-            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Start and Attach to Container"');
+            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Attach to Container"');
             return;
         }
 
@@ -347,7 +347,7 @@ function activate(context) {
     // Command to start GitGadget
     let startGitGadget = vscode.commands.registerCommand('rsm-vscode.startGitGadget', async function () {
         if (!(await isInContainer())) {
-            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Start and Attach to Container"');
+            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Attach to Container"');
             return;
         }
 
@@ -372,7 +372,7 @@ function activate(context) {
     // Command to clean R and Python packages
     let cleanPackages = vscode.commands.registerCommand('rsm-vscode.cleanPackages', async function () {
         if (!(await isInContainer())) {
-            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Start and Attach to Container"');
+            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Attach to Container"');
             return;
         }
 
@@ -397,7 +397,7 @@ function activate(context) {
     // Command to setup RSM-MSBA container
     let setupContainer = vscode.commands.registerCommand('rsm-vscode.setupContainer', async function () {
         if (!(await isInContainer())) {
-            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Start and Attach to Container"');
+            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Attach to Container"');
             return;
         }
 

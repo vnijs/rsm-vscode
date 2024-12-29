@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.3.12";
+const EXTENSION_VERSION = "2024.1.3.14";
 
 // Global configuration storage
 let globalState;
@@ -56,6 +56,14 @@ const pathUtils = {
                 return `/home/${match[1]}/${match[2]}`;
             }
             return wslPath;
+        },
+        toLocalPath(containerPath) {
+            // Convert /home/jovyan/path to \\wsl.localhost\Ubuntu-22.04\home\vnijs\path
+            if (containerPath.startsWith('/home/jovyan/')) {
+                const relativePath = containerPath.replace('/home/jovyan/', '');
+                return `\\\\wsl.localhost\\Ubuntu-22.04\\home\\vnijs\\${relativePath}`;
+            }
+            return containerPath;
         },
         toWSLMountPath(winPath) {
             return winPath
@@ -209,6 +217,28 @@ const containerOps = {
 // Get the appropriate container operations based on platform
 const container = isWindows ? containerOps.windows : containerOps.macos;
 
+// Helper function to check if path is valid for container
+async function isValidContainerPath(path) {
+    try {
+        // If we're already in the container, all paths are valid
+        // since they're already in the container's filesystem
+        if (await isInContainer()) {
+            return true;
+        }
+        
+        // If we're not in the container yet, check if it's a WSL path on Windows
+        if (isWindows) {
+            return paths.isWSLPath(path);
+        }
+        
+        // On macOS, all paths are valid
+        return true;
+    } catch (error) {
+        log(`Error checking path validity: ${error.message}`);
+        return false;
+    }
+}
+
 function activate(context) {
     // Create output channel first so we can use logging
     outputChannel = vscode.window.createOutputChannel('RSM VS Code');
@@ -273,6 +303,14 @@ function activate(context) {
 
     // Command to start and attach to container
     let startContainer = vscode.commands.registerCommand('rsm-vscode.startContainer', async function () {
+        // Check if we're already in a container
+        if (await isInContainer()) {
+            const msg = 'Already connected to the RSM container';
+            log(msg);
+            vscode.window.showInformationMessage(msg);
+            return;
+        }
+
         // Check if we have a workspace folder selected
         if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
             const msg = isWindows ? 
@@ -294,9 +332,11 @@ function activate(context) {
         log(`Path for writing: ${wslPath}`);
         log(`Container path: ${containerPath}`);
 
-        // Validate path based on platform
-        if (isWindows && !paths.isWSLPath(currentPath)) {
-            const msg = 'Please select a folder in the WSL2 filesystem (\\\\wsl.localhost\\...)';
+        // Validate path based on environment
+        if (!(await isValidContainerPath(currentPath))) {
+            const msg = isWindows ? 
+                'Please select a folder in the WSL2 filesystem (\\\\wsl.localhost\\...)' :
+                'Please select a valid folder for the container';
             log(msg);
             vscode.window.showErrorMessage(msg);
             return;
@@ -395,8 +435,15 @@ function activate(context) {
 
             // First, reopen the workspace locally
             if (currentFolder) {
+                // Get the container path and convert it to local path
+                const containerPath = currentFolder.uri.path;
+                log(`Container path: ${containerPath}`);
+                
                 // Convert container path back to local path using platform-specific utilities
-                const localPath = paths.toLocalPath(currentFolder.uri.path);
+                const localPath = paths.toLocalPath(containerPath);
+                log(`Local path: ${localPath}`);
+                
+                // Open the folder locally
                 await vscode.commands.executeCommand(
                     'vscode.openFolder',
                     vscode.Uri.file(localPath),
@@ -421,7 +468,7 @@ function activate(context) {
     // Command to start Radiant
     let startRadiant = vscode.commands.registerCommand('rsm-vscode.startRadiant', async function () {
         if (!(await isInContainer())) {
-            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Start and Attach to Container"');
+            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Attach to Container"');
             return;
         }
 
@@ -446,7 +493,7 @@ function activate(context) {
     // Command to start GitGadget
     let startGitGadget = vscode.commands.registerCommand('rsm-vscode.startGitGadget', async function () {
         if (!(await isInContainer())) {
-            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Start and Attach to Container"');
+            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Attach to Container"');
             return;
         }
 
@@ -471,7 +518,7 @@ function activate(context) {
     // Command to clean R and Python packages
     let cleanPackages = vscode.commands.registerCommand('rsm-vscode.cleanPackages', async function () {
         if (!(await isInContainer())) {
-            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Start and Attach to Container"');
+            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Attach to Container"');
             return;
         }
 
@@ -496,7 +543,7 @@ function activate(context) {
     // Command to setup RSM-MSBA container
     let setupContainer = vscode.commands.registerCommand('rsm-vscode.setupContainer', async function () {
         if (!(await isInContainer())) {
-            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Start and Attach to Container"');
+            vscode.window.showErrorMessage('Please connect to the RSM container first using "RSM: Attach to Container"');
             return;
         }
 
@@ -559,47 +606,37 @@ function activate(context) {
 
         try {
             // Get current workspace folder
-        const currentFolder = vscode.workspace.workspaceFolders?.[0];
+            const currentFolder = vscode.workspace.workspaceFolders?.[0];
             if (!currentFolder) {
                 throw new Error('No workspace folder found');
             }
 
-            // Get the new workspace folder
+            // Get the new workspace folder using VS Code's native file browser
             const result = await vscode.window.showOpenDialog({
-            canSelectFiles: false,
-            canSelectFolders: true,
-            canSelectMany: false,
+                canSelectFiles: false,
+                canSelectFolders: true,
+                canSelectMany: false,
+                defaultUri: currentFolder.uri, // Start in current folder
                 title: 'Select New Workspace Folder'
             });
 
-        if (result && result[0]) {
+            if (result && result[0]) {
                 const newPath = result[0].fsPath;
                 log(`Selected new workspace path: ${newPath}`);
 
-                // Convert paths using platform-specific utilities
-                const wslPath = paths.toWSLPath(newPath);
-                const containerPath = paths.toContainerPath(newPath);
+                // When in container, the path is already in the correct format
+                const containerPath = newPath;
+                const projectName = path.basename(containerPath);
+                const workspaceFile = path.join(containerPath, `${projectName}.code-workspace`);
                 
-                log(`WSL path: ${wslPath}`);
                 log(`Container path: ${containerPath}`);
+                log(`Creating workspace file at: ${workspaceFile}`);
 
-                // Validate path based on platform
-                if (isWindows && !paths.isWSLPath(newPath)) {
-                    const msg = 'Please select a folder in the WSL2 filesystem (\\\\wsl.localhost\\...)';
-                    log(msg);
-                    vscode.window.showErrorMessage(msg);
-                    return;
-                }
-
-                // Create workspace file if it doesn't exist
-                const projectName = getProjectName(containerPath);
-                const workspaceFile = `${wslPath}/${projectName}.code-workspace`;
-                
                 // Create workspace content
-                    const workspaceContent = {
+                const workspaceContent = {
                     "folders": [{ "path": "." }],
-                        "settings": {
-                            "remote.containers.defaultExtensions": [
+                    "settings": {
+                        "remote.containers.defaultExtensions": [
                             "ms-vscode-remote.remote-containers"
                         ],
                         "workspace.openFolderWhenFileOpens": true,
@@ -608,28 +645,36 @@ function activate(context) {
                     },
                     "extensions": {
                         "recommendations": [
-                                "ms-vscode-remote.remote-containers"
-                            ]
+                            "ms-vscode-remote.remote-containers"
+                        ]
                     }
                 };
 
-                // Write workspace file
-                await writeFile(workspaceContent, workspaceFile);
+                // Create directory if it doesn't exist
+                const dir = path.dirname(workspaceFile);
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
+
+                // Write workspace file directly since we're in the container
+                fs.writeFileSync(workspaceFile, JSON.stringify(workspaceContent, null, 2));
                 log(`Created workspace file at: ${workspaceFile}`);
 
-                // Open the workspace using platform-specific method
-                const uri = await container.openInContainer(wslPath);
-                log(`Opening with URI: ${uri.toString()}`);
+                // Open the workspace directly since we're already in the container
+                await vscode.commands.executeCommand(
+                    'vscode.openFolder',
+                    vscode.Uri.file(containerPath),
+                    { forceReuseWindow: true }
+                );
                 
-                await vscode.commands.executeCommand('remote-containers.openFolder', uri);
-                    log(`Workspace changed to: ${containerPath}`);
-                } else {
+                log(`Workspace changed to: ${containerPath}`);
+            } else {
                 log('No workspace folder selected');
                 vscode.window.showErrorMessage('Workspace change cancelled: No folder selected');
-                }
-            } catch (error) {
-                log(`Error during workspace change: ${error.message}`);
-                vscode.window.showErrorMessage(`Failed to change workspace: ${error.message}`);
+            }
+        } catch (error) {
+            log(`Error during workspace change: ${error.message}`);
+            vscode.window.showErrorMessage(`Failed to change workspace: ${error.message}`);
         }
     });
 

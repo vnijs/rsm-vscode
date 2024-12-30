@@ -127,51 +127,17 @@ async function isInContainer() {
 
 // Helper function to write file
 async function writeFile(content, filePath) {
-    // Add write method info to content
-    const addWriteMethodInfo = (content, method) => {
-        return {
-            ...content,
-            "__writeMethod": `Written by ${method} at ${new Date().toISOString()}`
-        };
-    };
-
     // If we're in the container, try multiple approaches
-    if (isRemoteSession()) {
-        log('=== File Write Attempt ===');
-        log(`Attempting to write file: ${filePath}`);
-        
-        // 1. Try direct write first
-        try {
-            log(`\nMETHOD 1 - Direct write`);
-            log(`Attempting path: ${filePath}`);
-            const contentWithMethod = addWriteMethodInfo(content, "Method 1 - Direct write");
-            fs.writeFileSync(filePath, JSON.stringify(contentWithMethod, null, 2));
-            log(`SUCCESS: Direct write worked at: ${filePath}`);
-            return true;
-        } catch (error) {
-            log(`FAILED: Direct write failed`);
-            log(`Error: ${error.message}`);
-            
-            // 3. Try WSL network path as last resort
-            try {
-                log(`\nMETHOD 3 - Network path`);
-                const networkPath = `//wsl.localhost/Ubuntu-22.04${filePath}`;
-                log(`Attempting path: ${networkPath}`);
-                const contentWithMethod = addWriteMethodInfo(content, "Method 3 - Network path");
-                fs.writeFileSync(networkPath, JSON.stringify(contentWithMethod, null, 2));
-                log(`SUCCESS: Network path worked at: ${networkPath}`);
-                return true;
-            } catch (error3) {
-                log(`FAILED: Network path failed`);
-                log(`Error: ${error3.message}`);
-                throw new Error('Failed to write file using any available method');
-            }
-        }
-    }
+    // if (isRemoteSession()) {
+    //     log(`Attempting to write file : ${filePath}`);
+    //     const networkPath = `//wsl.localhost/Ubuntu-22.04${filePath}`;
+    //     log(`Attempting path: ${networkPath}`);
+    //     fs.writeFileSync(networkPath, JSON.stringify(content, null, 2));
+    //     return true;
+    // }
     
     // If on Windows but not in container, use WSL
     if (isWindows) {
-        const contentWithMethod = addWriteMethodInfo(content, "WSL write (not in container)");
         const writeCmd = `wsl.exe bash -c 'cat > "${filePath}"'`;
         log(`Writing file using command: ${writeCmd}`);
         
@@ -180,7 +146,7 @@ async function writeFile(content, filePath) {
             const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${filePath}"`]);
             
             // Write the content
-            proc.stdin.write(JSON.stringify(contentWithMethod, null, 2));
+            proc.stdin.write(JSON.stringify(content, null, 2));
             proc.stdin.end();
             
             // Wait for the process to complete
@@ -204,9 +170,8 @@ async function writeFile(content, filePath) {
     } else {
         // For macOS, write directly
         try {
-            const contentWithMethod = addWriteMethodInfo(content, "Direct write (macOS)");
             log(`Writing file directly at: ${filePath}`);
-            fs.writeFileSync(filePath, JSON.stringify(contentWithMethod, null, 2));
+            fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
             log(`Successfully wrote file at: ${filePath}`);
             return true;
         } catch (error) {

@@ -34,6 +34,23 @@ function getDefaultDistro() {
     });
 }
 
+function getWSLUsername() {
+    return new Promise((resolve, reject) => {
+        if (!isWindows) {
+            resolve(null);
+            return;
+        }
+        exec('wsl.exe whoami', (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve(stdout.trim());
+        });
+    });
+}
+
 module.exports = {
-    getDefaultDistro
+    getDefaultDistro,
+    getWSLUsername
 };

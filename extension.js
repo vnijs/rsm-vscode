@@ -3,7 +3,7 @@ const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { getDefaultDistro } = require('./functions');
+const { getDefaultDistro, getWSLUsername } = require('./functions');
 
 // Extension version for tracking changes
 const EXTENSION_VERSION = "2024.1.3.28";
@@ -59,11 +59,11 @@ const pathUtils = {
             return wslPath;
         },
         async toLocalPath(containerPath) {
-            // Convert /home/jovyan/path to \\wsl.localhost\<distro>\home\vnijs\path
+            // Convert /home/jovyan/path to \\wsl.localhost\<distro>\home\<username>\path
             if (containerPath.startsWith('/home/jovyan/')) {
                 const relativePath = containerPath.replace('/home/jovyan/', '');
-                const distro = await getDefaultDistro();
-                return `\\\\wsl.localhost\\${distro}\\home\\vnijs\\${relativePath}`;
+                const [distro, username] = await Promise.all([getDefaultDistro(), getWSLUsername()]);
+                return `\\\\wsl.localhost\\${distro}\\home\\${username}\\${relativePath}`;
             }
             return containerPath;
         },

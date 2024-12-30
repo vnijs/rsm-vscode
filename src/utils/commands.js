@@ -6,7 +6,12 @@ const { windowsPaths, macosPaths } = require('./path-utils');
 const { log } = require('./logger');
 const { writeFile, getProjectName } = require('./file-utils');
 const { getWSLUsername } = require('./wsl-utils');
+const { testFilePathsCommand } = require('./test-file-paths');
 const fs = require('fs');
+const { exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
+const { spawn } = require('child_process');
 
 // Get the appropriate utilities based on platform
 const paths = isWindows ? windowsPaths : macosPaths;
@@ -358,6 +363,127 @@ async function getContainerVersion() {
     }
 }
 
+async function readFileWSL(path) {
+    try {
+        const { stdout } = await execAsync(`wsl.exe bash -c 'cat "${path}"'`);
+        return stdout;
+    } catch (e) {
+        throw new Error(`Failed to read file: ${e.message}`);
+    }
+}
+
+async function setContainerVersionCommand(context) {
+    if (!await isInContainer()) {
+        const msg = 'Please connect to the RSM container first';
+        log(msg);
+        vscode.window.showErrorMessage(msg);
+        return;
+    }
+
+    const version = await getContainerVersion();
+    if (!version) {
+        const msg = 'Could not determine container version';
+        log(msg);
+        vscode.window.showErrorMessage(msg);
+        return;
+    }
+
+    log(`Container version detected: ${version}`);
+    const currentPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    log(`Current path: ${currentPath}`);
+
+    // Get WSL username for correct path
+    const wslUsername = await getWSLUsername();
+    log(`WSL username: ${wslUsername}`);
+
+    // Convert container path to WSL path
+    const wslPath = currentPath.replace(/\\/g, '/').replace('/home/jovyan', `/home/${wslUsername}`);
+    log(`WSL path: ${wslPath}`);
+
+    const projectName = getProjectName(wslPath);
+    log(`Project name: ${projectName}`);
+
+    // Copy docker-compose file
+    const isArm = os.arch() === 'arm64';
+    const sourceComposeFile = container.getComposeFile(isArm, context);
+    log(`Source compose file: ${sourceComposeFile}`);
+
+    try {
+        // Read and modify docker-compose content
+        log(`Reading source docker-compose file from: ${sourceComposeFile}`);
+        let composeContent = fs.readFileSync(sourceComposeFile, 'utf8')
+            .replace(/\r\n/g, '\n'); // Normalize line endings
+        log('Successfully read source docker-compose file');
+        
+        // Replace all instances of "latest" with the version
+        composeContent = composeContent.replace(/latest/g, version);
+        
+        // Write files using WSL paths
+        const targetComposeFile = `${wslPath}/docker-compose.yml`;
+        log(`Writing docker-compose.yml to: ${targetComposeFile}`);
+        const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${targetComposeFile}"`]);
+        proc.stdin.write(composeContent);
+        proc.stdin.end();
+        
+        await new Promise((resolve, reject) => {
+            proc.on('close', (code) => {
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`Failed to write docker-compose.yml, exit code: ${code}`));
+                }
+            });
+        });
+        log(`Successfully created docker-compose.yml with version ${version}`);
+
+        // Update .devcontainer.json
+        const devcontainerPath = `${wslPath}/.devcontainer.json`;
+        log(`Reading .devcontainer.json from: ${devcontainerPath}`);
+        let devcontainerContent;
+        try {
+            const devcontainerRaw = await readFileWSL(devcontainerPath);
+            devcontainerContent = JSON.parse(devcontainerRaw);
+            log('Successfully read .devcontainer.json');
+        } catch (e) {
+            log(`Error reading .devcontainer.json: ${e.message}`);
+            throw new Error('Failed to read .devcontainer.json');
+        }
+        devcontainerContent.dockerComposeFile = ['docker-compose.yml'];
+        await writeFile(devcontainerContent, devcontainerPath);
+        log('Successfully updated .devcontainer.json to use local docker-compose.yml');
+
+        // Update .code-workspace file
+        const workspaceFile = `${wslPath}/${projectName}.code-workspace`;
+        log(`Reading .code-workspace from: ${workspaceFile}`);
+        let workspaceContent;
+        try {
+            const workspaceRaw = await readFileWSL(workspaceFile);
+            workspaceContent = JSON.parse(workspaceRaw);
+            log('Successfully read .code-workspace');
+        } catch (e) {
+            log(`Error reading workspace file: ${e.message}`);
+            throw new Error('Failed to read workspace file');
+        }
+        workspaceContent.metadata.containerVersion = version;
+        await writeFile(workspaceContent, workspaceFile);
+        log(`Successfully updated .code-workspace with version ${version}`);
+
+        vscode.window.showInformationMessage(
+            `Container version set to ${version}. Files updated: docker-compose.yml, .devcontainer.json, and .code-workspace`,
+            'Rebuild Container'
+        ).then(selection => {
+            if (selection === 'Rebuild Container') {
+                vscode.commands.executeCommand('remote-containers.rebuildContainer');
+            }
+        });
+    } catch (error) {
+        const msg = `Failed to update files: ${error.message}`;
+        log(msg);
+        log(`Full error stack: ${error.stack}`);
+        vscode.window.showErrorMessage(msg);
+    }
+}
+
 async function changeWorkspaceCommand(context) {
     if (!(await isInContainer())) {
         vscode.window.showErrorMessage('Not connected to the RSM container');
@@ -563,73 +689,6 @@ async function debugContainerCommand() {
     }
 }
 
-async function setContainerVersionCommand(context) {
-    if (!await isInContainer()) {
-        const msg = 'Please connect to the RSM container first';
-        log(msg);
-        vscode.window.showErrorMessage(msg);
-        return;
-    }
-
-    const version = await getContainerVersion();
-    if (!version) {
-        const msg = 'Could not determine container version';
-        log(msg);
-        vscode.window.showErrorMessage(msg);
-        return;
-    }
-
-    log(`Container version detected: ${version}`);
-    const currentPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
-    const wslPath = isWindows ? paths.toWSLPath(currentPath) : currentPath;
-    const projectName = getProjectName(wslPath);
-
-    // Copy docker-compose file
-    const isArm = os.arch() === 'arm64';
-    const sourceComposeFile = container.getComposeFile(isArm, context);
-    const targetComposeFile = `${wslPath}/docker-compose.yml`;
-    
-    try {
-        // Read and modify docker-compose content
-        log('Reading source docker-compose file');
-        let composeContent = fs.readFileSync(sourceComposeFile, 'utf8');
-        composeContent = composeContent.replace(/latest/g, version);
-        fs.writeFileSync(targetComposeFile, composeContent);
-        log(`Created docker-compose.yml with version ${version}`);
-
-        // Update .devcontainer.json to point to local docker-compose
-        const devcontainerPath = `${wslPath}/.devcontainer.json`;
-        log('Updating .devcontainer.json');
-        const devcontainerContent = JSON.parse(fs.readFileSync(devcontainerPath, 'utf8'));
-        devcontainerContent.dockerComposeFile = ['docker-compose.yml'];
-        fs.writeFileSync(devcontainerPath, JSON.stringify(devcontainerContent, null, 2));
-        log('Updated .devcontainer.json to use local docker-compose.yml');
-
-        // Update .code-workspace file
-        const workspaceFile = `${wslPath}/${projectName}.code-workspace`;
-        log('Updating .code-workspace file');
-        const workspaceContent = JSON.parse(fs.readFileSync(workspaceFile, 'utf8'));
-        if (workspaceContent.metadata) {
-            workspaceContent.metadata.containerVersion = version;
-            fs.writeFileSync(workspaceFile, JSON.stringify(workspaceContent, null, 2));
-            log(`Updated .code-workspace with version ${version}`);
-        }
-
-        vscode.window.showInformationMessage(
-            `Container version set to ${version}. Files updated: docker-compose.yml, .devcontainer.json, and .code-workspace`,
-            'Rebuild Container'
-        ).then(selection => {
-            if (selection === 'Rebuild Container') {
-                vscode.commands.executeCommand('remote-containers.rebuildContainer');
-            }
-        });
-    } catch (error) {
-        const msg = `Failed to update files: ${error.message}`;
-        log(msg);
-        vscode.window.showErrorMessage(msg);
-    }
-}
-
 module.exports = {
     startContainerCommand,
     stopContainerCommand,
@@ -640,5 +699,6 @@ module.exports = {
     debugEnvCommand,
     changeWorkspaceCommand,
     debugContainerCommand,
-    setContainerVersionCommand
+    setContainerVersionCommand,
+    testFilePathsCommand
 }; 

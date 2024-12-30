@@ -34,13 +34,25 @@ async function isInContainer() {
 
 const windowsContainer = {
     async getDefaultDistro() {
-        const result = await execCommand('wsl.exe -l -v');
-        const lines = result.split('\n');
-        const defaultLine = lines.find(line => line.includes('*'));
-        if (!defaultLine) {
-            throw new Error('No default WSL distribution found');
+        try {
+            const { exec } = require('child_process');
+            const util = require('util');
+            const execAsync = util.promisify(exec);
+            const { stdout } = await execAsync('wsl.exe -l', { encoding: 'utf16le' });
+            const lines = stdout.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
+            
+            const defaultLine = lines.slice(1).find(line => line.includes('(Default)'));
+            if (!defaultLine) {
+                throw new Error('No default WSL distribution found');
+            }
+            const distroName = defaultLine.trim().split(' (Default)')[0];
+            return distroName;
+        } catch (error) {
+            log(`Error getting default distro: ${error.message}`);
+            return 'Ubuntu-22.04'; // Fallback value
         }
-        return defaultLine.split('*')[0].trim();
     },
 
     getComposeFile(isArm, context) {

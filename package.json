@@ -24,7 +24,11 @@
         "onCommand:rsm-vscode.startGitGadget",
         "onCommand:rsm-vscode.cleanPackages",
         "onCommand:rsm-vscode.setupContainer",
-        "onCommand:rsm-vscode.debugEnv"
+        "onCommand:rsm-vscode.debugEnv",
+        "onCommand:rsm-vscode.changeWorkspace",
+        "onCommand:rsm-vscode.debugContainer",
+        "onCommand:rsm-vscode.setContainerVersion",
+        "onCommand:rsm-vscode.testFilePaths"
     ],
     "main": "./extension.js",
     "contributes": {
@@ -64,6 +68,10 @@
             {
                 "command": "rsm-vscode.setContainerVersion",
                 "title": "RSM: Set Container Version"
+            },
+            {
+                "command": "rsm-vscode.testFilePaths",
+                "title": "RSM: Test File Paths"
             }
         ]
     },

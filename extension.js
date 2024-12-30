@@ -14,11 +14,12 @@ const {
     debugEnvCommand,
     changeWorkspaceCommand,
     debugContainerCommand,
-    setContainerVersionCommand
+    setContainerVersionCommand,
+    testFilePathsCommand
 } = require('./src/utils/commands');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.3.28";
+const EXTENSION_VERSION = "2024.1.3.37";
 
 // Global configuration storage
 let globalState;
@@ -97,6 +98,7 @@ function activate(context) {
     let changeWorkspace = vscode.commands.registerCommand('rsm-vscode.changeWorkspace', () => changeWorkspaceCommand(context));
     let debugContainer = vscode.commands.registerCommand('rsm-vscode.debugContainer', debugContainerCommand);
     let setContainerVersion = vscode.commands.registerCommand('rsm-vscode.setContainerVersion', () => setContainerVersionCommand(context));
+    let testFilePaths = vscode.commands.registerCommand('rsm-vscode.testFilePaths', testFilePathsCommand);
 
     // Register all commands
     context.subscriptions.push(startContainer);
@@ -109,6 +111,7 @@ function activate(context) {
     context.subscriptions.push(changeWorkspace);
     context.subscriptions.push(debugContainer);
     context.subscriptions.push(setContainerVersion);
+    context.subscriptions.push(testFilePaths);
 }
 
 function deactivate() {}

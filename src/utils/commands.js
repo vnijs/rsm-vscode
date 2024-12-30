@@ -57,31 +57,114 @@ async function startContainerCommand(context) {
         // Check for existing files and their metadata
         const devcontainerJsonPath = `${wslPath}/.devcontainer.json`;
         const workspaceFilePath = `${wslPath}/${projectName}.code-workspace`;
+        const dockerComposePath = `${wslPath}/docker-compose.yml`;
         let useExistingFiles = false;
 
-        try {
-            // Check if both files exist
-            await vscode.workspace.fs.stat(vscode.Uri.file(devcontainerJsonPath));
-            await vscode.workspace.fs.stat(vscode.Uri.file(workspaceFilePath));
+        log('Checking paths:');
+        log(`devcontainerJsonPath: ${devcontainerJsonPath}`);
+        log(`workspaceFilePath: ${workspaceFilePath}`);
+        log(`dockerComposePath: ${dockerComposePath}`);
 
-            // Read workspace file to check metadata
-            const workspaceContent = JSON.parse(fs.readFileSync(workspaceFilePath, 'utf8'));
-            if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
-                useExistingFiles = true;
-                log('Found existing files created by RSM extension');
+        // Try different methods to read the workspace file
+        try {
+            // Method 1: Direct WSL read
+            log('Attempting to read workspace file using wsl.exe cat...');
+            try {
+                const workspaceRaw = await readFileWSL(workspaceFilePath);
+                const workspaceContent = JSON.parse(workspaceRaw);
+                log('Successfully read workspace file using wsl.exe cat');
+                if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
+                    log('Found existing workspace file created by RSM extension');
+                    // Check if there's a specific container version set
+                    const containerVersion = workspaceContent.metadata?.containerVersion;
+                    if (containerVersion && containerVersion !== 'latest') {
+                        // Check if local docker-compose file exists
+                        try {
+                            const composeContent = await readFileWSL(dockerComposePath);
+                            log('Found local docker-compose.yml file');
+                            useExistingFiles = true;
+                            vscode.window.showInformationMessage(
+                                `Found existing configuration with version ${containerVersion}. Using existing files.`
+                            );
+                        } catch (e) {
+                            log(`Failed to read docker-compose.yml: ${e.message}`);
+                            vscode.window.showInformationMessage(
+                                `Found configuration with version ${containerVersion} but no docker-compose.yml. Will create new files.`
+                            );
+                        }
+                    } else {
+                        useExistingFiles = true;
+                        log('Found existing files created by RSM extension');
+                        vscode.window.showInformationMessage(
+                            'Found existing configuration with latest version. Using existing files.'
+                        );
+                    }
+                } else {
+                    log('Workspace file exists but was not created by RSM extension');
+                    vscode.window.showInformationMessage(
+                        'Found workspace file not created by RSM extension. Will create new files.'
+                    );
+                }
+            } catch (e) {
+                log(`Failed to read workspace file using wsl.exe cat: ${e.message}`);
+                
+                // Method 2: Try VS Code's file system API
+                log('Attempting to read workspace file using VS Code API...');
+                try {
+                    const uri = vscode.Uri.file(workspaceFilePath);
+                    const content = await vscode.workspace.fs.readFile(uri);
+                    const workspaceContent = JSON.parse(content.toString());
+                    log('Successfully read workspace file using VS Code API');
+                    
+                    if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
+                        // Same version checking logic as above
+                        log('Found existing workspace file created by RSM extension');
+                        const containerVersion = workspaceContent.metadata?.containerVersion;
+                        if (containerVersion && containerVersion !== 'latest') {
+                            try {
+                                await vscode.workspace.fs.stat(vscode.Uri.file(dockerComposePath));
+                                log('Found local docker-compose.yml file');
+                                useExistingFiles = true;
+                                vscode.window.showInformationMessage(
+                                    `Found existing configuration with version ${containerVersion}. Using existing files.`
+                                );
+                            } catch (e) {
+                                log(`Failed to find docker-compose.yml: ${e.message}`);
+                                vscode.window.showInformationMessage(
+                                    `Found configuration with version ${containerVersion} but no docker-compose.yml. Will create new files.`
+                                );
+                            }
+                        } else {
+                            useExistingFiles = true;
+                            log('Found existing files created by RSM extension');
+                            vscode.window.showInformationMessage(
+                                'Found existing configuration with latest version. Using existing files.'
+                            );
+                        }
+                    }
+                } catch (e2) {
+                    log(`Failed to read workspace file using VS Code API: ${e2.message}`);
+                    log('No existing workspace file found or unable to read it');
+                    vscode.window.showInformationMessage(
+                        'No existing configuration found. Will create new files.'
+                    );
+                }
             }
         } catch (e) {
-            log('No existing files or metadata found');
+            log(`All file reading attempts failed: ${e.message}`);
+            vscode.window.showInformationMessage(
+                'No existing configuration found. Will create new files.'
+            );
         }
 
         if (useExistingFiles) {
             // Use existing configuration
             log('Using existing configuration files');
-                const uri = await container.openInContainer(wslPath);
-                log(`Opening with URI: ${uri.toString()}`);
-                await vscode.commands.executeCommand('remote-containers.openFolder', uri);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                return;
+            const uri = await container.openInContainer(wslPath);
+            log(`Opening with URI: ${uri.toString()}`);
+            await vscode.commands.executeCommand('remote-containers.openFolder', uri);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return;
         }
 
         // If we get here, we need to create new configuration files
@@ -403,6 +486,50 @@ async function setContainerVersionCommand(context) {
     const projectName = getProjectName(wslPath);
     log(`Project name: ${projectName}`);
 
+    // Check existing files first
+    const workspaceFile = `${wslPath}/${projectName}.code-workspace`;
+    let shouldUpdate = true;
+    let existingVersion = null;
+
+    try {
+        // Check if workspace file exists and was created by our extension
+        const workspaceRaw = await readFileWSL(workspaceFile);
+        const workspaceContent = JSON.parse(workspaceRaw);
+        
+        if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
+            log('Found existing workspace file created by RSM extension');
+            existingVersion = workspaceContent.metadata?.containerVersion;
+            
+            if (existingVersion && existingVersion !== 'latest') {
+                log(`Existing version found: ${existingVersion}`);
+                shouldUpdate = false;
+                vscode.window.showInformationMessage(
+                    `Found existing configuration with version ${existingVersion}. Will not overwrite files.`
+                );
+                return;
+            } else {
+                log('No specific version found in existing workspace file');
+                vscode.window.showInformationMessage(
+                    'Found existing configuration but no specific version set. Will update files.'
+                );
+            }
+        } else {
+            log('Workspace file exists but was not created by RSM extension');
+            vscode.window.showInformationMessage(
+                'Found workspace file not created by RSM extension. Will update files.'
+            );
+        }
+    } catch (e) {
+        log('No existing workspace file found or error reading it');
+        vscode.window.showInformationMessage(
+            'No existing configuration found. Will create new files.'
+        );
+    }
+
+    if (!shouldUpdate) {
+        return;
+    }
+
     // Copy docker-compose file
     const isArm = os.arch() === 'arm64';
     const sourceComposeFile = container.getComposeFile(isArm, context);
@@ -417,6 +544,12 @@ async function setContainerVersionCommand(context) {
         
         // Replace all instances of "latest" with the version
         composeContent = composeContent.replace(/latest/g, version);
+        
+        // Add version to container name with hyphen
+        composeContent = composeContent.replace(
+            /(container_name:\s*"?rsm-msba-k8s-arm)"?/g,
+            `$1-${version}`
+        );
         
         // Write files using WSL paths
         const targetComposeFile = `${wslPath}/docker-compose.yml`;
@@ -453,7 +586,6 @@ async function setContainerVersionCommand(context) {
         log('Successfully updated .devcontainer.json to use local docker-compose.yml');
 
         // Update .code-workspace file
-        const workspaceFile = `${wslPath}/${projectName}.code-workspace`;
         log(`Reading .code-workspace from: ${workspaceFile}`);
         let workspaceContent;
         try {
@@ -519,21 +651,104 @@ async function changeWorkspaceCommand(context) {
             // Check for existing files and their metadata
             const devcontainerJsonPath = `${wslPath}/.devcontainer.json`;
             const workspaceFilePath = `${wslPath}/${projectName}.code-workspace`;
+            const dockerComposePath = `${wslPath}/docker-compose.yml`;
             let useExistingFiles = false;
 
-            try {
-                // Check if both files exist
-                await vscode.workspace.fs.stat(vscode.Uri.file(devcontainerJsonPath));
-                await vscode.workspace.fs.stat(vscode.Uri.file(workspaceFilePath));
+            log('Checking paths:');
+            log(`devcontainerJsonPath: ${devcontainerJsonPath}`);
+            log(`workspaceFilePath: ${workspaceFilePath}`);
+            log(`dockerComposePath: ${dockerComposePath}`);
 
-                // Read workspace file to check metadata
-                const workspaceContent = JSON.parse(fs.readFileSync(workspaceFilePath, 'utf8'));
-                if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
-                    useExistingFiles = true;
-                    log('Found existing files created by RSM extension');
+            // Try different methods to read the workspace file
+            try {
+                // Method 1: Direct WSL read
+                log('Attempting to read workspace file using wsl.exe cat...');
+                try {
+                    const workspaceRaw = await readFileWSL(workspaceFilePath);
+                    const workspaceContent = JSON.parse(workspaceRaw);
+                    log('Successfully read workspace file using wsl.exe cat');
+                    if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
+                        log('Found existing workspace file created by RSM extension');
+                        // Check if there's a specific container version set
+                        const containerVersion = workspaceContent.metadata?.containerVersion;
+                        if (containerVersion && containerVersion !== 'latest') {
+                            // Check if local docker-compose file exists
+                            try {
+                                const composeContent = await readFileWSL(dockerComposePath);
+                                log('Found local docker-compose.yml file');
+                                useExistingFiles = true;
+                                vscode.window.showInformationMessage(
+                                    `Found existing configuration with version ${containerVersion}. Using existing files.`
+                                );
+                            } catch (e) {
+                                log(`Failed to read docker-compose.yml: ${e.message}`);
+                                vscode.window.showInformationMessage(
+                                    `Found configuration with version ${containerVersion} but no docker-compose.yml. Will create new files.`
+                                );
+                            }
+                        } else {
+                            useExistingFiles = true;
+                            log('Found existing files created by RSM extension');
+                            vscode.window.showInformationMessage(
+                                'Found existing configuration with latest version. Using existing files.'
+                            );
+                        }
+                    } else {
+                        log('Workspace file exists but was not created by RSM extension');
+                        vscode.window.showInformationMessage(
+                            'Found workspace file not created by RSM extension. Will create new files.'
+                        );
+                    }
+                } catch (e) {
+                    log(`Failed to read workspace file using wsl.exe cat: ${e.message}`);
+                    
+                    // Method 2: Try VS Code's file system API
+                    log('Attempting to read workspace file using VS Code API...');
+                    try {
+                        const uri = vscode.Uri.file(workspaceFilePath);
+                        const content = await vscode.workspace.fs.readFile(uri);
+                        const workspaceContent = JSON.parse(content.toString());
+                        log('Successfully read workspace file using VS Code API');
+                        
+                        if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
+                            // Same version checking logic as above
+                            log('Found existing workspace file created by RSM extension');
+                            const containerVersion = workspaceContent.metadata?.containerVersion;
+                            if (containerVersion && containerVersion !== 'latest') {
+                                try {
+                                    await vscode.workspace.fs.stat(vscode.Uri.file(dockerComposePath));
+                                    log('Found local docker-compose.yml file');
+                                    useExistingFiles = true;
+                                    vscode.window.showInformationMessage(
+                                        `Found existing configuration with version ${containerVersion}. Using existing files.`
+                                    );
+                                } catch (e) {
+                                    log(`Failed to find docker-compose.yml: ${e.message}`);
+                                    vscode.window.showInformationMessage(
+                                        `Found configuration with version ${containerVersion} but no docker-compose.yml. Will create new files.`
+                                    );
+                                }
+                            } else {
+                                useExistingFiles = true;
+                                log('Found existing files created by RSM extension');
+                                vscode.window.showInformationMessage(
+                                    'Found existing configuration with latest version. Using existing files.'
+                                );
+                            }
+                        }
+                    } catch (e2) {
+                        log(`Failed to read workspace file using VS Code API: ${e2.message}`);
+                        log('No existing workspace file found or unable to read it');
+                        vscode.window.showInformationMessage(
+                            'No existing configuration found. Will create new files.'
+                        );
+                    }
                 }
             } catch (e) {
-                log('No existing files or metadata found');
+                log(`All file reading attempts failed: ${e.message}`);
+                vscode.window.showInformationMessage(
+                    'No existing configuration found. Will create new files.'
+                );
             }
 
             if (useExistingFiles) {

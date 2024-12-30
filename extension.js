@@ -19,7 +19,7 @@ const {
 } = require('./src/utils/commands');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.3.37";
+const EXTENSION_VERSION = "2024.1.3.44";
 
 // Global configuration storage
 let globalState;

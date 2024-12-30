@@ -6,6 +6,7 @@ const { windowsPaths, macosPaths } = require('./path-utils');
 const { log } = require('./logger');
 const { writeFile, getProjectName } = require('./file-utils');
 const { getWSLUsername } = require('./wsl-utils');
+const fs = require('fs');
 
 // Get the appropriate utilities based on platform
 const paths = isWindows ? windowsPaths : macosPaths;
@@ -48,6 +49,37 @@ async function startContainerCommand(context) {
         const projectName = getProjectName(containerPath);
         log(`Project name: ${projectName}`);
 
+        // Check for existing files and their metadata
+        const devcontainerJsonPath = `${wslPath}/.devcontainer.json`;
+        const workspaceFilePath = `${wslPath}/${projectName}.code-workspace`;
+        let useExistingFiles = false;
+
+        try {
+            // Check if both files exist
+            await vscode.workspace.fs.stat(vscode.Uri.file(devcontainerJsonPath));
+            await vscode.workspace.fs.stat(vscode.Uri.file(workspaceFilePath));
+
+            // Read workspace file to check metadata
+            const workspaceContent = JSON.parse(fs.readFileSync(workspaceFilePath, 'utf8'));
+            if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
+                useExistingFiles = true;
+                log('Found existing files created by RSM extension');
+            }
+        } catch (e) {
+            log('No existing files or metadata found');
+        }
+
+        if (useExistingFiles) {
+            // Use existing configuration
+            log('Using existing configuration files');
+                const uri = await container.openInContainer(wslPath);
+                log(`Opening with URI: ${uri.toString()}`);
+                await vscode.commands.executeCommand('remote-containers.openFolder', uri);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                return;
+        }
+
+        // If we get here, we need to create new configuration files
         const isArm = os.arch() === 'arm64';
         const composeFile = container.getComposeFile(isArm, context);
         const wslComposeFile = paths.toWSLMountPath(composeFile);
@@ -63,7 +95,11 @@ async function startContainerCommand(context) {
             "remoteWorkspaceFolder": containerPath,
             "customizations": {
                 "vscode": {
-                    "extensions": ["ms-vscode-remote.remote-containers"]
+                    "extensions": ["ms-vscode-remote.remote-containers"],
+                    "settings": {
+                        "workbench.welcomePage.walkthroughs.openOnInstall": false,
+                        "workbench.startupEditor": "none"
+                    }
                 }
             },
             "remoteEnv": {
@@ -79,23 +115,34 @@ async function startContainerCommand(context) {
                 ],
                 "workspace.openFolderWhenFileOpens": true,
                 "remote.autoForwardPorts": true,
-                "workbench.confirmBeforeOpen": false
+                "workbench.confirmBeforeOpen": false,
+                "workbench.welcomePage.walkthroughs.openOnInstall": false
             },
             "extensions": {
                 "recommendations": [
                     "ms-vscode-remote.remote-containers"
                 ]
+            },
+            "metadata": {
+                "createdBy": "rsm-vscode-extension",
+                "createdAt": new Date().toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'),
+                "containerVersion": "latest"
             }
         };
 
-        const devcontainerPath = `${wslPath}/.devcontainer.json`;
-        const workspacePath = `${wslPath}/${projectName}.code-workspace`;
+        log(`Creating .devcontainer.json at: ${devcontainerJsonPath}`);
+        await writeFile(devcontainerContent, devcontainerJsonPath);
         
-        log(`Creating .devcontainer.json at ${devcontainerPath}`);
-        await writeFile(devcontainerContent, devcontainerPath);
-        
-        log(`Creating workspace file at ${workspacePath}`);
-        await writeFile(workspaceContent, workspacePath);
+        log(`Creating workspace file at: ${workspaceFilePath}`);
+        await writeFile(workspaceContent, workspaceFilePath);
         
         log(`Opening folder in container: ${containerPath}`);
 
@@ -103,6 +150,9 @@ async function startContainerCommand(context) {
         log(`Opening with URI: ${uri.toString()}`);
         
         await vscode.commands.executeCommand('remote-containers.openFolder', uri);
+
+        // Wait a moment for the container to connect
+        await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
         log('Error attaching to container:', true);
         log(`Full error: ${error.stack}`);
@@ -256,6 +306,58 @@ async function debugEnvCommand() {
     });
 }
 
+async function getContainerVersion() {
+    if (!(await isInContainer())) {
+        return 'Unknown';
+    }
+    
+    try {
+        // Get current workspace folder
+        const currentFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!currentFolder) {
+            log('No workspace folder found');
+            return 'Unknown';
+        }
+
+        const terminal = await vscode.window.createTerminal({
+            name: 'Version Check',
+            shellPath: '/bin/zsh',
+            hideFromUser: true
+        });
+        
+        // Write to .rsm-version in the current workspace
+        const versionFile = '.rsm-version';
+        terminal.sendText(`printf "%s" "$DOCKERHUB_VERSION" > ${versionFile} && exit`);
+        
+        // Wait for the command to complete and file to be written
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Read the version from the file using VS Code's API
+        try {
+            const uri = vscode.Uri.joinPath(currentFolder.uri, versionFile);
+            const content = await vscode.workspace.fs.readFile(uri);
+            const version = Buffer.from(content).toString().trim();
+            
+            // Clean up
+            try { 
+                await vscode.workspace.fs.delete(uri);
+            } catch (e) { 
+                /* ignore cleanup errors */ 
+            }
+            terminal.dispose();
+            
+            return version || 'Unknown';
+        } catch (error) {
+            log(`Failed to read version file: ${error.message}`);
+            terminal.dispose();
+            return 'Unknown';
+        }
+    } catch (error) {
+        log(`Failed to get container version: ${error.message}`);
+        return 'Unknown';
+    }
+}
+
 async function changeWorkspaceCommand(context) {
     if (!(await isInContainer())) {
         vscode.window.showErrorMessage('Not connected to the RSM container');
@@ -288,6 +390,47 @@ async function changeWorkspaceCommand(context) {
             log(`Container path: ${containerPath}`);
             log(`WSL path for writing: ${wslPath}`);
 
+            // Check for existing files and their metadata
+            const devcontainerJsonPath = `${wslPath}/.devcontainer.json`;
+            const workspaceFilePath = `${wslPath}/${projectName}.code-workspace`;
+            let useExistingFiles = false;
+
+            try {
+                // Check if both files exist
+                await vscode.workspace.fs.stat(vscode.Uri.file(devcontainerJsonPath));
+                await vscode.workspace.fs.stat(vscode.Uri.file(workspaceFilePath));
+
+                // Read workspace file to check metadata
+                const workspaceContent = JSON.parse(fs.readFileSync(workspaceFilePath, 'utf8'));
+                if (workspaceContent.metadata?.createdBy === 'rsm-vscode-extension') {
+                    useExistingFiles = true;
+                    log('Found existing files created by RSM extension');
+                }
+            } catch (e) {
+                log('No existing files or metadata found');
+            }
+
+            if (useExistingFiles) {
+                // Use existing configuration
+                log('Using existing configuration files');
+                if (isMacOS) {
+                    log('Using macOS-specific workspace opening');
+                    await vscode.commands.executeCommand(
+                        'remote-containers.openWorkspace',
+                        vscode.Uri.file(workspaceFilePath)
+                    );
+                } else {
+                    log('Using default workspace opening');
+                    await vscode.commands.executeCommand(
+                        'vscode.openFolder',
+                        result[0],
+                        { forceReuseWindow: true }
+                    );
+                }
+                return;
+            }
+
+            // If we get here, we need to create new configuration files
             const isArm = os.arch() === 'arm64';
             const composeFile = container.getComposeFile(isArm, context);
             const wslComposeFile = paths.toWSLMountPath(composeFile);
@@ -303,7 +446,11 @@ async function changeWorkspaceCommand(context) {
                 "remoteWorkspaceFolder": containerPath,
                 "customizations": {
                     "vscode": {
-                        "extensions": ["ms-vscode-remote.remote-containers"]
+                        "extensions": ["ms-vscode-remote.remote-containers"],
+                        "settings": {
+                            "workbench.welcomePage.walkthroughs.openOnInstall": false,
+                            "workbench.startupEditor": "none"
+                        }
                     }
                 },
                 "remoteEnv": {
@@ -319,29 +466,40 @@ async function changeWorkspaceCommand(context) {
                     ],
                     "workspace.openFolderWhenFileOpens": true,
                     "remote.autoForwardPorts": true,
-                    "workbench.confirmBeforeOpen": false
+                    "workbench.confirmBeforeOpen": false,
+                    "workbench.welcomePage.walkthroughs.openOnInstall": false
                 },
                 "extensions": {
                     "recommendations": [
                         "ms-vscode-remote.remote-containers"
                     ]
+                },
+                "metadata": {
+                    "createdBy": "rsm-vscode-extension",
+                    "createdAt": new Date().toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'),
+                    "containerVersion": "latest"
                 }
             };
 
-            const devcontainerFile = path.posix.join(wslPath, '.devcontainer.json');
-            const workspaceFile = path.posix.join(wslPath, `${projectName}.code-workspace`);
+            log(`Creating .devcontainer.json at: ${devcontainerJsonPath}`);
+            await writeFile(devcontainerContent, devcontainerJsonPath);
             
-            log(`Creating .devcontainer.json at: ${devcontainerFile}`);
-            await writeFile(devcontainerContent, devcontainerFile);
-            
-            log(`Creating workspace file at: ${workspaceFile}`);
-            await writeFile(workspaceContent, workspaceFile);
+            log(`Creating workspace file at: ${workspaceFilePath}`);
+            await writeFile(workspaceContent, workspaceFilePath);
 
             if (isMacOS) {
                 log('Using macOS-specific workspace opening');
                 await vscode.commands.executeCommand(
                     'remote-containers.openWorkspace',
-                    vscode.Uri.file(workspaceFile)
+                    vscode.Uri.file(workspaceFilePath)
                 );
             } else {
                 log('Using default workspace opening');
@@ -405,6 +563,73 @@ async function debugContainerCommand() {
     }
 }
 
+async function setContainerVersionCommand(context) {
+    if (!await isInContainer()) {
+        const msg = 'Please connect to the RSM container first';
+        log(msg);
+        vscode.window.showErrorMessage(msg);
+        return;
+    }
+
+    const version = await getContainerVersion();
+    if (!version) {
+        const msg = 'Could not determine container version';
+        log(msg);
+        vscode.window.showErrorMessage(msg);
+        return;
+    }
+
+    log(`Container version detected: ${version}`);
+    const currentPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const wslPath = isWindows ? paths.toWSLPath(currentPath) : currentPath;
+    const projectName = getProjectName(wslPath);
+
+    // Copy docker-compose file
+    const isArm = os.arch() === 'arm64';
+    const sourceComposeFile = container.getComposeFile(isArm, context);
+    const targetComposeFile = `${wslPath}/docker-compose.yml`;
+    
+    try {
+        // Read and modify docker-compose content
+        log('Reading source docker-compose file');
+        let composeContent = fs.readFileSync(sourceComposeFile, 'utf8');
+        composeContent = composeContent.replace(/latest/g, version);
+        fs.writeFileSync(targetComposeFile, composeContent);
+        log(`Created docker-compose.yml with version ${version}`);
+
+        // Update .devcontainer.json to point to local docker-compose
+        const devcontainerPath = `${wslPath}/.devcontainer.json`;
+        log('Updating .devcontainer.json');
+        const devcontainerContent = JSON.parse(fs.readFileSync(devcontainerPath, 'utf8'));
+        devcontainerContent.dockerComposeFile = ['docker-compose.yml'];
+        fs.writeFileSync(devcontainerPath, JSON.stringify(devcontainerContent, null, 2));
+        log('Updated .devcontainer.json to use local docker-compose.yml');
+
+        // Update .code-workspace file
+        const workspaceFile = `${wslPath}/${projectName}.code-workspace`;
+        log('Updating .code-workspace file');
+        const workspaceContent = JSON.parse(fs.readFileSync(workspaceFile, 'utf8'));
+        if (workspaceContent.metadata) {
+            workspaceContent.metadata.containerVersion = version;
+            fs.writeFileSync(workspaceFile, JSON.stringify(workspaceContent, null, 2));
+            log(`Updated .code-workspace with version ${version}`);
+        }
+
+        vscode.window.showInformationMessage(
+            `Container version set to ${version}. Files updated: docker-compose.yml, .devcontainer.json, and .code-workspace`,
+            'Rebuild Container'
+        ).then(selection => {
+            if (selection === 'Rebuild Container') {
+                vscode.commands.executeCommand('remote-containers.rebuildContainer');
+            }
+        });
+    } catch (error) {
+        const msg = `Failed to update files: ${error.message}`;
+        log(msg);
+        vscode.window.showErrorMessage(msg);
+    }
+}
+
 module.exports = {
     startContainerCommand,
     stopContainerCommand,
@@ -414,5 +639,6 @@ module.exports = {
     setupContainerCommand,
     debugEnvCommand,
     changeWorkspaceCommand,
-    debugContainerCommand
+    debugContainerCommand,
+    setContainerVersionCommand
 }; 

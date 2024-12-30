@@ -13,7 +13,8 @@ const {
     setupContainerCommand,
     debugEnvCommand,
     changeWorkspaceCommand,
-    debugContainerCommand
+    debugContainerCommand,
+    setContainerVersionCommand
 } = require('./src/utils/commands');
 
 // Extension version for tracking changes
@@ -95,6 +96,7 @@ function activate(context) {
     let debugEnv = vscode.commands.registerCommand('rsm-vscode.debugEnv', debugEnvCommand);
     let changeWorkspace = vscode.commands.registerCommand('rsm-vscode.changeWorkspace', () => changeWorkspaceCommand(context));
     let debugContainer = vscode.commands.registerCommand('rsm-vscode.debugContainer', debugContainerCommand);
+    let setContainerVersion = vscode.commands.registerCommand('rsm-vscode.setContainerVersion', () => setContainerVersionCommand(context));
 
     // Register all commands
     context.subscriptions.push(startContainer);
@@ -106,6 +108,7 @@ function activate(context) {
     context.subscriptions.push(debugEnv);
     context.subscriptions.push(changeWorkspace);
     context.subscriptions.push(debugContainer);
+    context.subscriptions.push(setContainerVersion);
 }
 
 function deactivate() {}

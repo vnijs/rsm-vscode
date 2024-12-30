@@ -56,6 +56,14 @@
             {
                 "command": "rsm-vscode.changeWorkspace",
                 "title": "RSM: Change workspace folder"
+            },
+            {
+                "command": "rsm-vscode.debugContainer",
+                "title": "RSM: Debug Container"
+            },
+            {
+                "command": "rsm-vscode.setContainerVersion",
+                "title": "RSM: Set Container Version"
             }
         ]
     },

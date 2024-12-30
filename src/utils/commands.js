@@ -640,8 +640,11 @@ async function changeWorkspaceCommand(context) {
             const newPath = result[0].fsPath.replace(/\\/g, '/');
             log(`Selected new workspace path: ${newPath}`);
 
+            // We're already in the container, so newPath is the containerPath
             const containerPath = newPath;
-            const wslPath = isWindows ? containerPath.replace('/home/jovyan', `/home/${await getWSLUsername()}`) : containerPath;
+            const wslPath = isWindows ?
+                containerPath.replace('/home/jovyan', `/home/${await getWSLUsername()}`) :
+                containerPath.replace('/home/jovyan', os.homedir());  // Use host OS home dir for macOS
 
             const projectName = getProjectName(containerPath);
             

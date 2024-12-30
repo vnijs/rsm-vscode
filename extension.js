@@ -3,6 +3,7 @@ const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getDefaultDistro } = require('./functions');
 
 // Extension version for tracking changes
 const EXTENSION_VERSION = "2024.1.3.28";
@@ -57,11 +58,12 @@ const pathUtils = {
             }
             return wslPath;
         },
-        toLocalPath(containerPath) {
-            // Convert /home/jovyan/path to \\wsl.localhost\Ubuntu-22.04\home\vnijs\path
+        async toLocalPath(containerPath) {
+            // Convert /home/jovyan/path to \\wsl.localhost\<distro>\home\vnijs\path
             if (containerPath.startsWith('/home/jovyan/')) {
                 const relativePath = containerPath.replace('/home/jovyan/', '');
-                return `\\\\wsl.localhost\\Ubuntu-22.04\\home\\vnijs\\${relativePath}`;
+                const distro = await getDefaultDistro();
+                return `\\\\wsl.localhost\\${distro}\\home\\vnijs\\${relativePath}`;
             }
             return containerPath;
         },
@@ -127,15 +129,7 @@ async function isInContainer() {
 
 // Helper function to write file
 async function writeFile(content, filePath) {
-    // If we're in the container, try multiple approaches
-    // if (isRemoteSession()) {
-    //     log(`Attempting to write file : ${filePath}`);
-    //     const networkPath = `//wsl.localhost/Ubuntu-22.04${filePath}`;
-    //     log(`Attempting path: ${networkPath}`);
-    //     fs.writeFileSync(networkPath, JSON.stringify(content, null, 2));
-    //     return true;
-    // }
-    
+   
     // If on Windows but not in container, use WSL
     if (isWindows) {
         const writeCmd = `wsl.exe bash -c 'cat > "${filePath}"'`;

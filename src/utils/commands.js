@@ -455,6 +455,17 @@ async function readFileWSL(path) {
     }
 }
 
+// Add this helper function for cross-platform file reading
+async function readFileContent(filePath) {
+    if (isWindows) {
+        return readFileWSL(filePath);
+    } else {
+        // Use direct file reading on macOS
+        const fs = require('fs').promises;
+        return fs.readFile(filePath, 'utf8');
+    }
+}
+
 async function setContainerVersionCommand(context) {
     if (!await isInContainer()) {
         const msg = 'Please connect to the RSM container first';
@@ -479,9 +490,12 @@ async function setContainerVersionCommand(context) {
     const wslUsername = await getWSLUsername();
     log(`WSL username: ${wslUsername}`);
 
-    // Convert container path to WSL path
-    const wslPath = currentPath.replace(/\\/g, '/').replace('/home/jovyan', `/home/${wslUsername}`);
-    log(`WSL path: ${wslPath}`);
+    // Convert container path to local path based on platform
+    const wslPath = isWindows ?
+        currentPath.replace(/\\/g, '/').replace('/home/jovyan', `/home/${await getWSLUsername()}`) :
+        currentPath.replace('/home/jovyan', os.homedir());  // Use os.homedir() for macOS
+
+    log(`Local path for writing: ${wslPath}`);
 
     const projectName = getProjectName(wslPath);
     log(`Project name: ${projectName}`);
@@ -538,35 +552,55 @@ async function setContainerVersionCommand(context) {
     try {
         // Read and modify docker-compose content
         log(`Reading source docker-compose file from: ${sourceComposeFile}`);
-        let composeContent = fs.readFileSync(sourceComposeFile, 'utf8')
-            .replace(/\r\n/g, '\n'); // Normalize line endings
+        let composeContent;
+
+        if (isWindows) {
+            // Existing Windows logic
+            composeContent = fs.readFileSync(sourceComposeFile, 'utf8')
+                .replace(/\r\n/g, '\n');
+        } else {
+            // macOS logic
+            composeContent = await fs.promises.readFile(sourceComposeFile, 'utf8');
+            // Split into lines and rejoin with Unix line endings
+            composeContent = composeContent.split(/\r?\n/).join('\n');
+        }
         log('Successfully read source docker-compose file');
         
         // Replace all instances of "latest" with the version
         composeContent = composeContent.replace(/latest/g, version);
         
         // Add version to container name with hyphen
+        const chipType = isArm ? 'arm' : 'intel';
         composeContent = composeContent.replace(
-            /(container_name:\s*"?rsm-msba-k8s-arm)"?/g,
-            `$1-${version}`
+            /(container_name:\s*"?rsm-msba-k8s-)(arm|intel)"?/g,
+            `$1${chipType}-${version}`
         );
         
-        // Write files using WSL paths
+        // Write files using appropriate method for each platform
         const targetComposeFile = `${wslPath}/docker-compose.yml`;
         log(`Writing docker-compose.yml to: ${targetComposeFile}`);
-        const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${targetComposeFile}"`]);
-        proc.stdin.write(composeContent);
-        proc.stdin.end();
-        
-        await new Promise((resolve, reject) => {
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    resolve();
-                } else {
-                    reject(new Error(`Failed to write docker-compose.yml, exit code: ${code}`));
-                }
+
+        if (isWindows) {
+        // Existing Windows write logic
+            const proc = spawn('wsl.exe', ['bash', '-c', `cat > "${targetComposeFile}"`]);
+            proc.stdin.write(composeContent);
+            proc.stdin.end();
+
+            await new Promise((resolve, reject) => {
+                proc.on('close', (code) => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        reject(new Error(`Failed to write docker-compose.yml, exit code: ${code}`));
+                    }
+                });
             });
-        });
+        } else {
+            // macOS write logic
+            // await writeFile(composeContent, targetComposeFile);
+            // Since we know the content is YAML, we can directly write it
+            await fs.promises.writeFile(targetComposeFile, composeContent, 'utf8');
+        }
         log(`Successfully created docker-compose.yml with version ${version}`);
 
         // Update .devcontainer.json
@@ -574,7 +608,7 @@ async function setContainerVersionCommand(context) {
         log(`Reading .devcontainer.json from: ${devcontainerPath}`);
         let devcontainerContent;
         try {
-            const devcontainerRaw = await readFileWSL(devcontainerPath);
+            const devcontainerRaw = await readFileContent(devcontainerPath);
             devcontainerContent = JSON.parse(devcontainerRaw);
             log('Successfully read .devcontainer.json');
         } catch (e) {
@@ -589,7 +623,7 @@ async function setContainerVersionCommand(context) {
         log(`Reading .code-workspace from: ${workspaceFile}`);
         let workspaceContent;
         try {
-            const workspaceRaw = await readFileWSL(workspaceFile);
+            const workspaceRaw = await readFileContent(workspaceFile);
             workspaceContent = JSON.parse(workspaceRaw);
             log('Successfully read .code-workspace');
         } catch (e) {
@@ -919,4 +953,4 @@ module.exports = {
     debugContainerCommand,
     setContainerVersionCommand,
     testFilePathsCommand
-}; 
+};

@@ -41,12 +41,17 @@ const windowsPaths = {
 
 const macosPaths = {
     toContainerPath(localPath) {
+        // Use os.homedir() consistently for path conversion
         return localPath.replace(os.homedir(), '/home/jovyan');
     },
 
     toLocalPath(containerPath) {
+        // Use os.homedir() consistently for path conversion
         return containerPath.replace('/home/jovyan', os.homedir());
     },
+
+    // Remove extra read/write/pathExists methods since they're not needed
+    // The core functionality is just path conversion
 
     toWSLMountPath(path) {
         return path; // No conversion needed on macOS
@@ -60,4 +65,4 @@ const macosPaths = {
 module.exports = {
     windowsPaths,
     macosPaths
-}; 
+};

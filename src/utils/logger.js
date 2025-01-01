@@ -1,42 +1,54 @@
 const vscode = require('vscode');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 let outputChannel;
+let logFile;
 
 /**
- * Initializes the logger with a VS Code output channel
- * @param {vscode.ExtensionContext} context The extension context
+ * Initialize the logger
  */
-function initLogger(context) {
+function initLogger() {
     outputChannel = vscode.window.createOutputChannel('RSM VS Code');
-    context.subscriptions.push(outputChannel);
-}
 
-/**
- * Logs a message to the output channel and optionally shows a popup
- * @param {string} message The message to log
- * @param {boolean} popup Whether to show the message in a popup
- */
-function log(message, popup = false) {
-    if (!outputChannel) return;  // Guard against early calls
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}`;
-    outputChannel.appendLine(logMessage);
-    if (popup) {
-        vscode.window.showInformationMessage(message);
+    // Create logs directory in the extension's workspace
+    const logDir = path.join(os.homedir(), 'gh', 'rsm-vscode', 'logs');
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
     }
+
+    // Create log file with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    logFile = path.join(logDir, `rsm-vscode-${timestamp}.log`);
+
+    log(`Initializing logger. Writing to ${logFile}`);
 }
 
 /**
- * Shows the output channel
+ * Log a message to both the output channel and file
+ * @param {string} message - The message to log
+ * @param {boolean} [show=false] - Whether to show the output channel
  */
-function showOutput() {
+function log(message, show = false) {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+
+    // Write to VS Code output channel
     if (outputChannel) {
-        outputChannel.show();
+        outputChannel.append(logMessage);
+        if (show) {
+            outputChannel.show();
+        }
+    }
+
+    // Write to log file
+    if (logFile) {
+        fs.appendFileSync(logFile, logMessage);
     }
 }
 
 module.exports = {
     initLogger,
-    log,
-    showOutput
+    log
 }; 

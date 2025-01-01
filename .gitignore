@@ -9,4 +9,6 @@ test-results/
 coverage/
 .env
 *.log
+logs/
+latest-commits/
 

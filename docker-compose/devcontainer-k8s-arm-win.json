@@ -1,0 +1,25 @@
+{
+    "name": "rsm-msba-k8s-arm-win",
+    "dockerComposeFile": [
+        "docker-compose-k8s-arm-win.yml"
+    ],
+    "service": "rsm-msba",
+    "workspaceFolder": "/home/jovyan",
+    "remoteUser": "jovyan",
+    "overrideCommand": false,
+    "remoteWorkspaceFolder": "/home/jovyan",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode-remote.remote-containers"
+            ],
+            "settings": {
+                "workbench.welcomePage.walkthroughs.openOnInstall": false,
+                "workbench.startupEditor": "none"
+            }
+        }
+    },
+    "remoteEnv": {
+        "HOME": "/home/jovyan"
+    }
+}

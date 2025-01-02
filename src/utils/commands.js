@@ -777,8 +777,7 @@ async function checkContainerConflictsCommand(context) {
             const response = await vscode.window.showWarningMessage(
                 msg,
                 { modal: true },
-                stopButton,
-                'Cancel'
+                stopButton
             );
 
             if (response === stopButton) {

@@ -200,17 +200,12 @@ async function createConfigFiles(targetFolder) {
         log(`Creating .devcontainer.json at: ${devContainerPath}`);
         log(`Using compose file: ${dockerComposePath}`);
 
-        const devContainerContent = await createDevcontainerContent("/home/jovyan", dockerComposePath, isArm);
-
-        // Create workspace file
-        const workspaceFile = path.join(targetFolder, path.basename(targetFolder) + '.code-workspace');
-        log(`Creating workspace file at: ${workspaceFile}`);
-
-        const workspaceContent = createWorkspaceContent();
+        // Convert local path to container path
+        const containerPath = `/home/jovyan/${path.basename(targetFolder)}`;
+        const devContainerContent = await createDevcontainerContent(containerPath, dockerComposePath, isArm);
 
         // Use writeFile utility that handles path conversion
         await writeFile(devContainerContent, devContainerPath);
-        await writeFile(workspaceContent, workspaceFile);
 
         log('Created configuration files successfully');
     } catch (error) {

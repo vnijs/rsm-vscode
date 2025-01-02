@@ -1,7 +1,7 @@
 services:
   rsm-msba:
     image: vnijs/rsm-msba-k8s-arm:latest
-    container_name: rsm-msba-k8s-arm
+    container_name: rsm-msba-k8s-latest
     ports:
       - "127.0.0.1:8765:8765"
     environment:

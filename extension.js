@@ -15,12 +15,13 @@ const {
     changeWorkspaceCommand,
     debugContainerCommand,
     setContainerVersionCommand,
-    testFilePathsCommand
+    testFilePathsCommand,
+    checkContainerConflictsCommand
 } = require('./src/utils/commands');
 const path = require('path');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.3.70";
+const EXTENSION_VERSION = "2024.1.3.87";
 
 // Global configuration storage
 let globalState;
@@ -32,32 +33,56 @@ const paths = isWindows ? windowsPaths : macosPaths;
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-    // Initialize logger
-    initLogger();
-    log(`Extension Version: ${EXTENSION_VERSION}`);
+    try {
+        // Initialize logger
+        initLogger();
+        log(`Extension Version: ${EXTENSION_VERSION}`);
 
-    // Store global state
-    globalState = context.globalState;
+        // Show version popup
+        vscode.window.showInformationMessage(`RSM VS Code Extension ${EXTENSION_VERSION}`);
 
-    // Register commands
-    context.subscriptions.push(
-        vscode.commands.registerCommand('rsm-vscode.startContainer', () => startContainerCommand(context)),
-        vscode.commands.registerCommand('rsm-vscode.stopContainer', () => stopContainerCommand(context)),
-        vscode.commands.registerCommand('rsm-vscode.startRadiant', startRadiantCommand),
-        vscode.commands.registerCommand('rsm-vscode.startGitGadget', startGitGadgetCommand),
-        vscode.commands.registerCommand('rsm-vscode.cleanPackages', cleanPackagesCommand),
-        vscode.commands.registerCommand('rsm-vscode.setupContainer', setupContainerCommand),
-        vscode.commands.registerCommand('rsm-vscode.debugEnv', debugEnvCommand),
-        vscode.commands.registerCommand('rsm-vscode.changeWorkspace', () => changeWorkspaceCommand(context)),
-        vscode.commands.registerCommand('rsm-vscode.debugContainer', debugContainerCommand),
-        vscode.commands.registerCommand('rsm-vscode.setContainerVersion', () => setContainerVersionCommand(context)),
-        vscode.commands.registerCommand('rsm-vscode.testFilePaths', testFilePathsCommand)
-    );
+        // Store global state
+        globalState = context.globalState;
 
-    log('Extension activated');
+        // Register commands
+        const commandRegistrations = [
+            { id: 'rsm-vscode.startContainer', handler: () => startContainerCommand(context) },
+            { id: 'rsm-vscode.stopContainer', handler: () => stopContainerCommand(context) },
+            { id: 'rsm-vscode.startRadiant', handler: startRadiantCommand },
+            { id: 'rsm-vscode.startGitGadget', handler: startGitGadgetCommand },
+            { id: 'rsm-vscode.cleanPackages', handler: cleanPackagesCommand },
+            { id: 'rsm-vscode.setupContainer', handler: setupContainerCommand },
+            { id: 'rsm-vscode.debugEnv', handler: debugEnvCommand },
+            { id: 'rsm-vscode.changeWorkspace', handler: () => changeWorkspaceCommand(context) },
+            { id: 'rsm-vscode.debugContainer', handler: debugContainerCommand },
+            { id: 'rsm-vscode.setContainerVersion', handler: () => setContainerVersionCommand(context) },
+            { id: 'rsm-vscode.testFilePaths', handler: testFilePathsCommand },
+            { id: 'rsm-vscode.checkContainerConflicts', handler: () => checkContainerConflictsCommand(context) }
+        ];
+
+        // Register each command with error handling
+        commandRegistrations.forEach(({ id, handler }) => {
+            try {
+                const disposable = vscode.commands.registerCommand(id, handler);
+                context.subscriptions.push(disposable);
+                log(`Registered command: ${id}`);
+            } catch (error) {
+                log(`Failed to register command ${id}: ${error.message}`);
+                console.error(`Command registration error for ${id}:`, error);
+            }
+        });
+
+        log('Extension activated');
+    } catch (error) {
+        console.error('Extension activation error:', error);
+        log(`Activation error: ${error.message}`);
+        throw error;
+    }
 }
 
-function deactivate() {}
+function deactivate() {
+    log('Extension deactivated');
+}
 
 module.exports = {
     activate,

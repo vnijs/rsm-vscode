@@ -1,5 +1,5 @@
 {
-    "name": "rsm-msba-k8s-arm",
+    "name": "rsm-msba-k8s-latest",
     "dockerComposeFile": [
         "docker-compose-k8s-arm.yml"
     ],

@@ -72,24 +72,54 @@ async function startContainerCommand(context) {
         // Check if all required files exist and were created by our extension
         try {
             const [workspaceContent, devcontainerContent, dockerComposeContent] = await Promise.all([
-                fs.promises.readFile(workspaceFilePath, 'utf8'),
-                fs.promises.readFile(devcontainerJsonPath, 'utf8'),
-                fs.promises.readFile(dockerComposePath, 'utf8')
+                fs.promises.readFile(workspaceFilePath, 'utf8').catch(() => null),
+                fs.promises.readFile(devcontainerJsonPath, 'utf8').catch(() => null),
+                fs.promises.readFile(dockerComposePath, 'utf8').catch(() => null)
             ]);
 
-            const workspaceJson = JSON.parse(workspaceContent);
-            if (workspaceJson.metadata?.createdBy === 'rsm-vscode-extension') {
-                log('Found existing configuration created by RSM extension');
-                useExistingFiles = true;
-                const version = workspaceJson.metadata.containerVersion || 'latest';
-                vscode.window.showInformationMessage(
-                    `Found existing configuration with version ${version}. Using existing files.`
-                );
-            } else {
-                log('Found workspace file but not created by RSM extension');
+            log('File read results:');
+            log(`Workspace file exists: ${!!workspaceContent}`);
+            log(`Devcontainer file exists: ${!!devcontainerContent}`);
+            log(`Docker compose file exists: ${!!dockerComposeContent}`);
+
+            if (workspaceContent && devcontainerContent && dockerComposeContent) {
+                const workspaceJson = JSON.parse(workspaceContent);
+                if (workspaceJson.metadata?.createdBy === 'rsm-vscode-extension') {
+                    log('Found existing configuration created by RSM extension');
+                    useExistingFiles = true;
+
+                    // Check for existing container
+                    const containerNameMatch = dockerComposeContent.match(/container_name:\s*([^\s]+)/);
+                    if (containerNameMatch) {
+                        const containerName = containerNameMatch[1];
+                        log(`Found container name in docker-compose: ${containerName}`);
+
+                        // Check if container exists (running or stopped)
+                        const { stdout: containerList } = await execAsync('docker ps -a --format "{{.Names}} {{.Status}}"');
+                        log(`Docker container list: ${containerList}`);
+
+                        const containerExists = containerList.includes(containerName);
+                        log(`Container ${containerName} exists: ${containerExists}`);
+
+                        if (containerExists) {
+                            const isRunning = containerList.includes(containerName + ' Up');
+                            log(`Container ${containerName} is running: ${isRunning}`);
+
+                            if (!isRunning) {
+                                log(`Starting existing container ${containerName}`);
+                                await execAsync(`docker start ${containerName}`);
+                                await waitForContainer(containerName);
+                            }
+                        }
+                    }
+
+                    const version = workspaceJson.metadata.containerVersion || 'latest';
+                    log(`Using existing configuration with version ${version}`);
+                }
             }
         } catch (e) {
-            log(`Could not read or validate configuration files: ${e.message}`);
+            log(`Error checking existing files: ${e.message}`);
+            log(`Full error stack: ${e.stack}`);
         }
 
         if (!useExistingFiles) {
@@ -100,6 +130,7 @@ async function startContainerCommand(context) {
             const wslComposeFile = paths.toWSLMountPath(composeFile);
             const devcontainerContent = await createDevcontainerContent(containerPath, wslComposeFile, isArm);
             tempDevContainerFile = await createTemporaryDevContainer(devcontainerContent, wslPath);
+            log(`Created temporary devcontainer file: ${tempDevContainerFile}`);
         }
 
         // Get the container URI and open the folder
@@ -116,6 +147,7 @@ async function startContainerCommand(context) {
             setTimeout(async () => {
                 try {
                     await cleanupTemporaryDevContainer(tempDevContainerFile, wslPath);
+                    log('Cleaned up temporary devcontainer file');
                 } catch (e) {
                     log(`Error cleaning up temporary devcontainer: ${e.message}`);
                 }
@@ -412,12 +444,6 @@ async function setContainerVersionCommand(context) {
         const workspaceFile = path.join(localPath, `${projectName}.code-workspace`);
         const devContainerFile = path.join(localPath, '.devcontainer.json');
 
-        // Store path for reattachment after restart
-        context.globalState.update('pendingContainerAttach', {
-            path: localPath,
-            timestamp: Date.now()
-        });
-
         log(`Workspace file path: ${workspaceFile}`);
         let workspaceContent;
 
@@ -493,60 +519,9 @@ async function setContainerVersionCommand(context) {
         await writeFile(devContainerContent, devContainerFile);
         log(`Updated .devcontainer.json with version ${version}`);
 
-        // Now that all files are updated, handle container switch
-        log('Managing container switch...');
-
-        // Get all running containers with our base name
-        const baseContainerPrefix = 'rsm-msba-k8s-arm';
-        try {
-            const { stdout: runningContainers } = await execAsync('docker ps --format "{{.Names}}"');
-            log(`Currently running containers:\n${runningContainers}`);
-
-            // Stop any containers with our base name
-            const containersToStop = runningContainers.split('\n')
-                .filter(name => name.startsWith(baseContainerPrefix));
-
-            if (containersToStop.length > 0) {
-                log(`Found containers to stop: ${containersToStop.join(', ')}`);
-                for (const containerName of containersToStop) {
-                    log(`Stopping container: ${containerName}`);
-                    await execAsync(`docker stop ${containerName}`);
-                    await execAsync(`docker rm ${containerName}`);
-                }
-            }
-        } catch (error) {
-            log(`Note during container cleanup: ${error.message}`);
-        }
-
-        // Now check if a container with our target name already exists
-        const targetContainerName = version === 'latest' ? baseContainerName : `${baseContainerName}-${version}`;
-        try {
-            const { stdout: existingContainer } = await execAsync(`docker ps -q -f name=${targetContainerName}`);
-            if (existingContainer) {
-                log(`Container ${targetContainerName} already exists and running, will reuse it`);
-                // Store path for reattachment after restart
-                context.globalState.update('pendingContainerAttach', {
-                    path: localPath,
-                    timestamp: Date.now()
-                });
-                return;
-            }
-        } catch (error) {
-            log(`Note checking existing container: ${error.message}`);
-        }
-
-        // Stop VS Code's connection to the container
-        log('Stopping VS Code container connection...');
-        await stopContainerCommand(context);
-        log('VS Code container connection stopped');
-
-        // Store path for reattachment after restart
-        context.globalState.update('pendingContainerAttach', {
-            path: localPath,
-            timestamp: Date.now()
-        });
-
-        // The extension will restart here, and the activate function will handle reattachment
+        vscode.window.showInformationMessage(
+            `Configuration files updated for version ${version}. Use "RSM: Detach from Container" and then "RSM: Attach to Container" to switch to the new version.`
+        );
 
     } catch (error) {
         const msg = `Failed to update files: ${error.message}`;

@@ -241,7 +241,6 @@ function activate(context) {
                     "workspaceFolder": workspaceFolder,
                     "remoteUser": "jovyan",
                     "overrideCommand": false,
-                    "remoteWorkspaceFolder": workspaceFolder,
                     "customizations": {
                         "vscode": {
                             "extensions": [
@@ -487,7 +486,6 @@ function activate(context) {
                                 "workspaceFolder": currentPath,
                                 "remoteUser": "jovyan",
                                 "overrideCommand": false,
-                                "remoteWorkspaceFolder": currentPath,
                                 "shutdownAction": "none",
                                 "customizations": {
                                     "vscode": {
@@ -616,7 +614,6 @@ function activate(context) {
                         "workspaceFolder": containerPath,
                         "remoteUser": "jovyan",
                         "overrideCommand": false,
-                        "remoteWorkspaceFolder": containerPath,
                         "shutdownAction": "none",
                         "customizations": {
                             "vscode": {

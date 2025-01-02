@@ -20,6 +20,9 @@ const { createConfigFiles } = require('./file-utils');
 const paths = isWindows ? windowsPaths : macosPaths;
 const container = isWindows ? windowsContainer : macosContainer;
 
+// Store the pending workspace change
+let pendingWorkspaceChange = null;
+
 async function startContainerCommand(context) {
     if (await isInContainer()) {
         const msg = 'Already connected to the RSM container';
@@ -660,6 +663,20 @@ async function changeWorkspaceCommand(context) {
             throw new Error('No workspace folder found');
         }
 
+        // If we have a pending change, process it
+        if (pendingWorkspaceChange) {
+            const targetPath = pendingWorkspaceChange;
+            pendingWorkspaceChange = null; // Clear it immediately
+            log(`Processing pending workspace change to: ${targetPath}`);
+
+            // Get the container URI and open the folder
+            const uri = await container.openInContainer(targetPath);
+            log(`Opening with URI: ${uri.toString()}`);
+            await openWorkspaceFolder(uri);
+            return;
+        }
+
+        // Otherwise, handle new workspace selection
         const result = await vscode.window.showOpenDialog({
             canSelectFiles: false,
             canSelectFolders: true,
@@ -676,81 +693,86 @@ async function changeWorkspaceCommand(context) {
         const newPath = result[0].fsPath.replace(/\\/g, '/');
         log(`Selected new workspace path: ${newPath}`);
 
-        // We're already in the container, so newPath is the containerPath
-        const containerPath = newPath;
-        const wslPath = isWindows ?
-            containerPath.replace('/home/jovyan', `/home/${await getWSLUsername()}`) :
-            containerPath.replace('/home/jovyan', os.homedir());
+        // Check for container conflicts
+        const targetDevContainerFile = path.join(newPath, '.devcontainer.json');
+        let targetContainerName;
+        try {
+            const devContainerRaw = await fs.promises.readFile(targetDevContainerFile, 'utf8');
+            const devContainerContent = JSON.parse(devContainerRaw);
+            targetContainerName = devContainerContent.name;
+            log(`Target container name: ${targetContainerName}`);
+        } catch (e) {
+            log(`No .devcontainer.json found in target, using default configuration`);
+            const isArm = os.arch() === 'arm64';
+            targetContainerName = isArm ? 'rsm-msba-k8s-arm-latest' : 'rsm-msba-k8s-intel-latest';
+        }
 
-        const projectName = getProjectName(containerPath);
-        const workspaceFile = path.join(wslPath, `${projectName}.code-workspace`);
-        const devContainerFile = path.join(wslPath, '.devcontainer.json');
-        let tempDevContainerFile = null;
+        // Check for running containers
+        const { stdout: containerList } = await execAsync('docker ps --format "{{.Names}}\t{{.Status}}"');
+        const runningContainers = containerList.split('\n')
+            .filter(line => line.trim())
+            .map(line => {
+                const [name, ...statusParts] = line.split('\t');
+                return { name, status: statusParts.join('\t') };
+            })
+            .filter(c => c.name.startsWith('rsm-msba-k8s-'));
 
-        log(`Container path: ${containerPath}`);
-        log(`WSL path for writing: ${wslPath}`);
-        log(`Checking for config files:
-            Workspace: ${workspaceFile}
-            DevContainer: ${devContainerFile}`);
+        // If target container is already running, that's fine
+        const targetIsRunning = runningContainers.some(c => c.name === targetContainerName);
+        if (targetIsRunning) {
+            log(`Target container ${targetContainerName} is already running`);
+            pendingWorkspaceChange = newPath;
+            // Use our existing stop container command
+            await stopContainerCommand(context);
+            return;
+        }
 
-        // Check if config files exist
-        const [workspaceExists, devContainerExists] = await Promise.all([
-            fs.promises.access(workspaceFile).then(() => true).catch(() => false),
-            fs.promises.access(devContainerFile).then(() => true).catch(() => false)
-        ]);
+        // Check for conflicts
+        const conflicts = runningContainers.filter(c => c.name !== targetContainerName);
+        if (conflicts.length > 0) {
+            const msg = `Container conflict detected!\n\nTrying to switch to: ${targetContainerName}\nCurrently running:\n${conflicts.map(c => `- ${c.name} (${c.status})`).join('\n')}`;
+            log(msg);
 
-        log(`Config files exist check:
-            Workspace: ${workspaceExists}
-            DevContainer: ${devContainerExists}`);
+            const detachAndStopButton = 'Detach, Stop Container, and Switch';
+            const response = await vscode.window.showWarningMessage(
+                msg,
+                { modal: true, detail: 'This will detach from the current container and stop any conflicting containers.' },
+                detachAndStopButton
+            );
 
-        // Only check for conflicts if we're going to use existing config files
-        if (workspaceExists && devContainerExists) {
-            log('Found existing configuration files, checking for conflicts');
-            // Check for and stop any conflicting containers
-            const stopped = await stopContainerIfNeeded(currentFolder.uri.fsPath, wslPath);
-            if (!stopped) {
-                log('User cancelled container stop, aborting workspace change');
+            if (response === detachAndStopButton) {
+                log('User chose to detach and stop containers');
+                pendingWorkspaceChange = newPath;
+
+                // Store current workspace path before detaching
+                await context.globalState.update('lastWorkspaceFolder', currentFolder.uri.fsPath);
+
+                // Use our existing stop container command
+                await stopContainerCommand(context);
+
+                // Then stop any other conflicting containers
+                for (const container of conflicts) {
+                    try {
+                        log(`Stopping container: ${container.name}`);
+                        await execAsync(`docker stop ${container.name}`);
+                        log(`Successfully stopped container: ${container.name}`);
+                    } catch (error) {
+                        log(`Error stopping container ${container.name}: ${error.message}`);
+                        throw new Error(`Failed to stop container ${container.name}: ${error.message}`);
+                    }
+                }
+                return;
+            } else {
+                log('User cancelled workspace change due to conflicts');
+                vscode.window.showInformationMessage('Workspace change cancelled. Conflicting containers are still running.');
                 return;
             }
-        } else {
-            log('No existing configuration files found, will reuse current container');
         }
 
-        // Get the container URI and open the folder
-        const uri = await container.openInContainer(wslPath);
-        log(`Opening with URI: ${uri.toString()}`);
-
-        // If both config files exist, use them
-        if (workspaceExists && devContainerExists) {
-            log('Using existing configuration files');
-            await openWorkspaceFolder(uri, workspaceFile);
-        } else {
-            // Create a temporary .devcontainer.json to prevent VS Code from prompting
-            const isArm = os.arch() === 'arm64';
-            const composeFile = container.getComposeFile(isArm, context);
-            const wslComposeFile = paths.toWSLMountPath(composeFile);
-            const devcontainerContent = await createDevcontainerContent(containerPath, wslComposeFile, isArm);
-
-            log('Creating temporary .devcontainer.json to prevent prompt');
-            tempDevContainerFile = await createTemporaryDevContainer(devcontainerContent, wslPath);
-
-            log('Opening folder directly in current container');
-            await openWorkspaceFolder(uri);
-
-            // Schedule cleanup
-            if (tempDevContainerFile) {
-                setTimeout(async () => {
-                    try {
-                        await cleanupTemporaryDevContainer(tempDevContainerFile, wslPath);
-                    } catch (e) {
-                        log(`Error cleaning up temporary devcontainer: ${e.message}`);
-                    }
-                }, 10000);
-            }
-        }
-
-        // Wait a moment for the container to connect
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // No conflicts, proceed with change
+        log('No conflicts found, proceeding with workspace change');
+        pendingWorkspaceChange = newPath;
+        await stopContainerCommand(context);
 
     } catch (error) {
         log(`Error in changeWorkspaceCommand: ${error.message}`);

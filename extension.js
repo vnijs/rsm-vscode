@@ -21,7 +21,7 @@ const {
 const path = require('path');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.3.120";
+const EXTENSION_VERSION = "2024.1.3.121";
 
 // Global configuration storage
 let globalState;

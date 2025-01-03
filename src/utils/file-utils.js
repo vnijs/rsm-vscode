@@ -1,7 +1,7 @@
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { log } = require('./logger');
-const { isWindows, isMacOS } = require('./container-utils');
+const { isWindows, isMacOS, getContainerVersion } = require('./container-utils');
 const vscode = require('vscode');
 const path = require('path');
 const { windowsPaths, macosPaths } = require('./path-utils');
@@ -84,10 +84,14 @@ async function createDevcontainerContent(containerPath, dockerComposePath, isArm
 
 /**
  * Creates the workspace configuration content
- * @param {string} containerVersion - The container version to use
- * @returns {Object} The workspace configuration
+ * @param {string} selectedVersion - The version selected by the user
+ * @returns {Promise<Object>} The workspace configuration
  */
-function createWorkspaceContent(containerVersion = 'latest') {
+async function createWorkspaceContent(selectedVersion = 'latest') {
+    // If we're in a container, get the actual version
+    const containerVersion = await getContainerVersion();
+    const version = containerVersion !== 'Unknown' ? containerVersion : selectedVersion;
+
     return {
         "folders": [{ "path": "." }],
         "settings": {
@@ -115,7 +119,7 @@ function createWorkspaceContent(containerVersion = 'latest') {
                 second: '2-digit',
                 hour12: false
             }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'),
-            "containerVersion": containerVersion
+            "containerVersion": version
         }
     };
 }

@@ -296,6 +296,58 @@ async function stopContainerIfNeeded(currentFolder, targetFolder) {
     }
 }
 
+async function getContainerVersion() {
+    if (!(await isInContainer())) {
+        return 'Unknown';
+    }
+
+    try {
+        // Get current workspace folder
+        const currentFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!currentFolder) {
+            log('No workspace folder found');
+            return 'Unknown';
+        }
+
+        const terminal = await vscode.window.createTerminal({
+            name: 'Version Check',
+            shellPath: '/bin/zsh',
+            hideFromUser: true
+        });
+
+        // Write to .rsm-version in the current workspace
+        const versionFile = '.rsm-version';
+        terminal.sendText(`printf "%s" "$DOCKERHUB_VERSION" > ${versionFile} && exit`);
+
+        // Wait for the command to complete and file to be written
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Read the version from the file using VS Code's API
+        try {
+            const uri = vscode.Uri.joinPath(currentFolder.uri, versionFile);
+            const content = await vscode.workspace.fs.readFile(uri);
+            const version = Buffer.from(content).toString().trim();
+
+            // Clean up
+            try {
+                await vscode.workspace.fs.delete(uri);
+            } catch (e) {
+                /* ignore cleanup errors */
+            }
+            terminal.dispose();
+
+            return version || 'Unknown';
+        } catch (error) {
+            log(`Failed to read version file: ${error.message}`);
+            terminal.dispose();
+            return 'Unknown';
+        }
+    } catch (error) {
+        log(`Failed to get container version: ${error.message}`);
+        return 'Unknown';
+    }
+}
+
 module.exports = {
     isRemoteSession,
     isInContainer,
@@ -304,5 +356,6 @@ module.exports = {
     isWindows,
     isMacOS,
     handleContainerConflict,
-    stopContainerIfNeeded
+    stopContainerIfNeeded,
+    getContainerVersion
 }; 

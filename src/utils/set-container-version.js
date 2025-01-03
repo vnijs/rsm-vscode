@@ -115,7 +115,7 @@ async function setContainerVersionCommand(context) {
 
         // Create .code-workspace file
         const projectName = getProjectName(currentPath);
-        const workspaceContent = createWorkspaceContent(version);
+        const workspaceContent = await createWorkspaceContent(version);
         await fs.writeFile(
             path.join(currentPath, `${projectName}.code-workspace`),
             JSON.stringify(workspaceContent, null, 4),

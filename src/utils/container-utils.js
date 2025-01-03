@@ -159,7 +159,7 @@ const windowsContainer = {
     },
 
     getComposeFile(isArm, context) {
-        return path.join(context.extensionPath, 'docker-compose', 
+        return path.join(context.extensionPath, 'docker-compose-latest', 
             isArm ? 'docker-compose-k8s-arm-win.yml' : 'docker-compose-k8s-intel-win.yml');
     },
 
@@ -171,7 +171,7 @@ const windowsContainer = {
     async stopContainer(context) {
         const isArm = process.arch === 'arm64';
         const composeFileName = isArm ? 'docker-compose-k8s-arm-win.yml' : 'docker-compose-k8s-intel-win.yml';
-        const composeFile = path.join(context.extensionPath, 'docker-compose', composeFileName);
+        const composeFile = path.join(context.extensionPath, 'docker-compose-latest', composeFileName);
         const composeDir = path.dirname(composeFile);
         await execCommand(`cd "${composeDir}" && docker-compose -f "${composeFileName}" down`);
     }
@@ -183,7 +183,7 @@ const macosContainer = {
     },
 
     getComposeFile(isArm, context) {
-        return path.join(context.extensionPath, 'docker-compose',
+        return path.join(context.extensionPath, 'docker-compose-latest',
             isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml');
     },
 
@@ -194,7 +194,7 @@ const macosContainer = {
     async stopContainer(context) {
         const isArm = process.arch === 'arm64';
         const composeFileName = isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml';
-        const composeFile = path.join(context.extensionPath, 'docker-compose', composeFileName);
+        const composeFile = path.join(context.extensionPath, 'docker-compose-latest', composeFileName);
         const composeDir = path.dirname(composeFile);
         await execCommand(`cd "${composeDir}" && docker-compose -f "${composeFileName}" down`);
     }

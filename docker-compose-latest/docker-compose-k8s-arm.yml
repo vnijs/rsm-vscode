@@ -1,0 +1,40 @@
+services:
+  rsm-msba:
+    image: vnijs/rsm-msba-k8s-arm:latest
+    container_name: rsm-msba-k8s-latest
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      TZ: America/Los_Angeles
+      USER: jovyan
+      HOME: /home/jovyan
+      SHELL: /bin/zsh
+      ZDOTDIR: /home/jovyan/.rsm-msba/zsh
+      PYTHONUSERBASE: /home/jovyan/.rsm-msba
+      JUPYTER_PATH: /home/jovyan/.rsm-msba/share/jupyter
+      JUPYTER_RUNTIME_DIR: /tmp/jupyter/runtime
+      JUPYTER_CONFIG_DIR: /home/jovyan/.rsm-msba/jupyter
+    volumes:
+      - ${HOME}:/home/jovyan
+      - pg_data:/var/lib/postgresql/16/main
+    networks:
+      - rsm-docker
+
+  # selenium:
+  #   image: seleniarm/standalone-firefox:latest
+  #   platform: linux/arm64
+  #   container_name: selenium_0
+  #   ports:
+  #     - "127.0.0.1:4444:4444"
+  #   networks:
+  #     - rsm-docker
+
+networks:
+  rsm-docker:
+    name: rsm-docker
+    external: true
+
+volumes:
+  pg_data:
+    name: pg_data
+    external: true

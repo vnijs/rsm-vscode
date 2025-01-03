@@ -29,9 +29,19 @@ async function createDevcontainerContent(containerPath, dockerComposePath, isArm
             isArm: ${isArm}
             isWindows: ${isWindows}`);
 
+        // Check for existing .devcontainer.json
+        const devcontainerPath = path.join(containerPath, '.devcontainer.json');
+        try {
+            const existingConfig = await fs.promises.readFile(devcontainerPath, 'utf8');
+            log('Found existing .devcontainer.json, using its configuration');
+            return JSON.parse(existingConfig);
+        } catch (e) {
+            log('No existing .devcontainer.json found, creating new configuration');
+        }
+
         // Get extension path and docker-compose directory
         const extensionPath = vscode.extensions.getExtension('vnijs.rsm-vscode').extensionPath;
-        const dockerComposeDir = path.join(extensionPath, 'docker-compose');
+        const dockerComposeDir = path.join(extensionPath, 'docker-compose-latest');
         log(`Extension path: ${extensionPath}`);
         log(`Docker compose directory: ${dockerComposeDir}`);
 
@@ -65,7 +75,11 @@ async function createDevcontainerContent(containerPath, dockerComposePath, isArm
         log('Updating configuration paths...');
         config.workspaceFolder = containerPath;
         config.remoteWorkspaceFolder = containerPath;
-        config.dockerComposeFile = [dockerComposePath];
+
+        // Use absolute path to the extension's docker-compose file
+        const extensionComposeFile = path.join(extensionPath, 'docker-compose-latest',
+            isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml');
+        config.dockerComposeFile = [extensionComposeFile];
 
         log(`Final configuration:
             workspaceFolder: ${config.workspaceFolder}

@@ -139,7 +139,7 @@ function activate(context) {
         const imageName = isArm ? 'vnijs/rsm-msba-k8s-arm:latest' : 'vnijs/rsm-msba-k8s-intel:latest';
         
         // Get the path to the docker-compose file
-        const composeFile = path.join(context.extensionPath, 'docker-compose', composeFileName);
+        const composeFile = path.join(context.extensionPath, 'docker-compose-latest', composeFileName);
         
         log(`Using compose file: ${composeFile} for ${os.arch()} architecture`);
 

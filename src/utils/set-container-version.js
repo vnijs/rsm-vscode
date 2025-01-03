@@ -46,13 +46,13 @@ async function setContainerVersionCommand(context) {
 
         log(`Selected version: ${version}`);
 
-        // Create docker-compose directory if it doesn't exist
-        const dockerComposeDir = path.join(currentPath, 'docker-compose');
+        // Create version-specific docker-compose directory
+        const dockerComposeDir = path.join(currentPath, `docker-compose-${version}`);
         await fs.mkdir(dockerComposeDir, { recursive: true });
 
         // Copy and modify docker-compose template
         const isArm = os.arch() === 'arm64';
-        const templateFile = path.join(context.extensionPath, 'docker-compose',
+        const templateFile = path.join(context.extensionPath, 'docker-compose-latest',
             isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml');
 
         let composeContent = await fs.readFile(templateFile, 'utf8');
@@ -83,7 +83,7 @@ async function setContainerVersionCommand(context) {
         const devcontainerContent = {
             name: `rsm-msba-k8s-${version}`,
             dockerComposeFile: [
-                path.join('docker-compose',
+                path.join(`docker-compose-${version}`,
                     isArm ? 'docker-compose-k8s-arm.yml' : 'docker-compose-k8s-intel.yml')
             ],
             service: "rsm-msba",
@@ -113,15 +113,52 @@ async function setContainerVersionCommand(context) {
         );
         log('Created .devcontainer.json');
 
-        // Create .code-workspace file
+        // Handle .code-workspace file
         const projectName = getProjectName(currentPath);
-        const workspaceContent = await createWorkspaceContent(version);
+        const workspaceFile = path.join(currentPath, `${projectName}.code-workspace`);
+
+        let workspaceContent;
+        try {
+            // Try to read existing workspace file
+            const existingWorkspace = await fs.readFile(workspaceFile, 'utf8');
+            workspaceContent = JSON.parse(existingWorkspace);
+
+            // Update only the container version related settings
+            if (workspaceContent.settings) {
+                workspaceContent.settings["dev.containers.defaultExtensions"] = [
+                    "ms-vscode-remote.remote-containers"
+                ];
+            }
+
+            // Update metadata with new version and timestamp
+            if (!workspaceContent.metadata) {
+                workspaceContent.metadata = {};
+            }
+            workspaceContent.metadata.createdBy = "rsm-vscode-extension";
+            workspaceContent.metadata.createdAt = new Date().toLocaleString('en-US', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2');
+            workspaceContent.metadata.containerVersion = version;
+
+            log('Updated existing .code-workspace file');
+        } catch (error) {
+            // If file doesn't exist or is invalid, create new workspace content
+            log('Creating new .code-workspace file');
+            workspaceContent = await createWorkspaceContent(version);
+        }
+
         await fs.writeFile(
-            path.join(currentPath, `${projectName}.code-workspace`),
+            workspaceFile,
             JSON.stringify(workspaceContent, null, 4),
             'utf8'
         );
-        log('Created .code-workspace file');
+        log('Saved .code-workspace file');
 
         vscode.window.showInformationMessage(`Container version set to ${version}`);
 

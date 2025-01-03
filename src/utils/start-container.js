@@ -55,18 +55,53 @@ async function startContainerCommand(context) {
             if (devcontainerContent.name && devcontainerContent.name.startsWith('rsm-msba-k8s-')) {
                 log(`Found RSM container configuration: ${devcontainerContent.name}`);
 
-                // Check for existing container with same name
-                const { stdout: containerList } = await execAsync('docker ps -a --format "{{.Names}}\t{{.Status}}"');
-                const containers = containerList.split('\n')
+                // Check for running containers that might conflict
+                const { stdout: containerList } = await execAsync('docker ps --format "{{.Names}}\t{{.Image}}\t{{.Status}}"');
+                const runningContainers = containerList.split('\n')
+                    .filter(line => line.trim())
                     .map(line => {
-                        const [name, ...statusParts] = line.split('\t');
-                        return { name, status: statusParts.join('\t') };
+                        const [name, image, ...statusParts] = line.split('\t');
+                        return { name, image, status: statusParts.join('\t') };
                     })
-                    .filter(c => c.name === devcontainerContent.name);
+                    .filter(c => c.name.startsWith('rsm-msba-k8s-') || c.image.includes('vnijs/rsm-msba-k8s'));
 
-                if (containers.length > 0) {
-                    log(`Found existing container: ${JSON.stringify(containers[0])}`);
-                    const container = containers[0];
+                log('Running k8s containers:');
+                log(JSON.stringify(runningContainers, null, 2));
+
+                // Get version suffix of target container
+                const targetVersion = devcontainerContent.name.split('rsm-msba-k8s-')[1];
+                log(`Target version: ${targetVersion}`);
+
+                // Check for conflicts
+                const conflictingContainers = runningContainers.filter(c => {
+                    const containerVersion = c.name.split('rsm-msba-k8s-')[1];
+                    return containerVersion !== targetVersion;
+                });
+
+                if (conflictingContainers.length > 0) {
+                    log(`Found conflicting containers: ${JSON.stringify(conflictingContainers)}`);
+                    const response = await vscode.window.showWarningMessage(
+                        `A container with a different version (${conflictingContainers[0].name}) is already running. Would you like to stop it?`,
+                        'Yes, Stop Container',
+                        'No, Cancel'
+                    );
+
+                    if (response === 'Yes, Stop Container') {
+                        for (const container of conflictingContainers) {
+                            log(`Stopping container: ${container.name}`);
+                            await execAsync(`docker stop ${container.name}`);
+                        }
+                    } else {
+                        log('User cancelled due to container conflict');
+                        return;
+                    }
+                }
+
+                // Check for existing container with same name
+                const sameNameContainers = runningContainers.filter(c => c.name === devcontainerContent.name);
+                if (sameNameContainers.length > 0) {
+                    log(`Found existing container: ${JSON.stringify(sameNameContainers[0])}`);
+                    const container = sameNameContainers[0];
 
                     // If container exists but is not running, start it
                     if (!container.status.includes('Up')) {

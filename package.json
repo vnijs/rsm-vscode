@@ -28,7 +28,8 @@
         "onCommand:rsm-vscode.changeWorkspace",
         "onCommand:rsm-vscode.debugContainer",
         "onCommand:rsm-vscode.setContainerVersion",
-        "onCommand:rsm-vscode.testFilePaths"
+        "onCommand:rsm-vscode.testFilePaths",
+        "onCommand:rsm-vscode.testWindowsCompat"
     ],
     "main": "./extension.js",
     "contributes": {
@@ -72,6 +73,10 @@
             {
                 "command": "rsm-vscode.testFilePaths",
                 "title": "RSM: Test File Paths"
+            },
+            {
+                "command": "rsm-vscode.testWindowsCompat",
+                "title": "RSM: Test Windows Compatibility"
             }
         ]
     },

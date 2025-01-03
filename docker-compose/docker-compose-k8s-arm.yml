@@ -32,7 +32,9 @@ services:
 networks:
   rsm-docker:
     name: rsm-docker
+    external: true
 
 volumes:
   pg_data:
     name: pg_data
+    external: true

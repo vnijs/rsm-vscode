@@ -84,9 +84,10 @@ async function createDevcontainerContent(containerPath, dockerComposePath, isArm
 
 /**
  * Creates the workspace configuration content
+ * @param {string} containerVersion - The container version to use
  * @returns {Object} The workspace configuration
  */
-function createWorkspaceContent() {
+function createWorkspaceContent(containerVersion = 'latest') {
     return {
         "folders": [{ "path": "." }],
         "settings": {
@@ -114,7 +115,7 @@ function createWorkspaceContent() {
                 second: '2-digit',
                 hour12: false
             }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'),
-            "containerVersion": "latest"
+            "containerVersion": containerVersion
         }
     };
 }

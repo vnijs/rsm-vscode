@@ -77,17 +77,17 @@ async function checkContainerConflicts(context, containerName, wslPath) {
     try {
         // Check for running containers only
         log('Checking for running containers...');
-        const { stdout: containerList } = await execAsync('docker ps --format "{{.Names}}\t{{.Status}}"');
+        const { stdout: containerList } = await execAsync('docker ps --format "{{.Names}}\t{{.Image}}\t{{.Status}}"');
         log(`Docker ps output: ${containerList}`);
 
         // Parse running containers with their status
         const runningContainers = containerList.split('\n')
             .filter(line => line.trim())  // Filter out empty lines
             .map(line => {
-                const [name, ...statusParts] = line.split('\t');
-                return { name, status: statusParts.join('\t') };
+                const [name, image, ...statusParts] = line.split('\t');
+                return { name, image, status: statusParts.join('\t') };
             })
-            .filter(c => c.name.startsWith('rsm-msba-k8s-')); // Only consider k8s containers
+            .filter(c => c.name.startsWith('rsm-msba-k8s-') || c.image.includes('vnijs/rsm-msba-k8s')); // Consider both name and image
 
         log('Running k8s containers:');
         log(JSON.stringify(runningContainers, null, 2));
@@ -97,7 +97,10 @@ async function checkContainerConflicts(context, containerName, wslPath) {
         log(`Target version: ${targetVersion}`);
 
         // If the container we want is already running, that's fine!
-        const targetIsRunning = runningContainers.some(c => c.name === containerName);
+        const targetIsRunning = runningContainers.some(c =>
+            c.name === containerName ||
+            (c.image === `vnijs/rsm-msba-k8s-${os.arch() === 'arm64' ? 'arm' : 'intel'}:${targetVersion}`)
+        );
         if (targetIsRunning) {
             const msg = `Container ${containerName} is already running`;
             log(msg);
@@ -107,8 +110,9 @@ async function checkContainerConflicts(context, containerName, wslPath) {
 
         // Check for conflicts with other running k8s containers
         const conflicts = runningContainers.filter(c => {
-            const version = c.name.split('rsm-msba-k8s-')[1];
-            return version !== targetVersion;
+            const nameVersion = c.name.split('rsm-msba-k8s-')[1];
+            const imageVersion = c.image.split(':')[1];
+            return nameVersion !== targetVersion && imageVersion !== targetVersion;
         });
         log(`Found ${conflicts.length} potential conflicts`);
 

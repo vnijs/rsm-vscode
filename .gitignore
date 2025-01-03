@@ -11,4 +11,5 @@ coverage/
 *.log
 logs/
 latest-commits/
+test?/
 

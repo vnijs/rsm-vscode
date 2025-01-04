@@ -203,7 +203,7 @@ const macosContainer = {
 /**
  * Gets the container version from a .devcontainer.json file
  * @param {string} filePath - Path to the .devcontainer.json file
- * @returns {Promise<string>} Container version (e.g., 'latest', '0.1.0')
+ * @returns {Promise<string>} Container version (e.g., 'latest', '1.0.0')
  */
 async function getContainerVersion(filePath) {
     try {

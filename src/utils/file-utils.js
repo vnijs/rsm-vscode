@@ -74,7 +74,7 @@ async function createDevcontainerContent(containerPath, dockerComposePath, isArm
         // Update the paths
         log('Updating configuration paths...');
         config.workspaceFolder = containerPath;
-        config.remoteWorkspaceFolder = containerPath;
+        // config.remoteWorkspaceFolder = containerPath;
 
         // Use absolute path to the extension's docker-compose file
         const extensionComposeFile = path.join(extensionPath, 'docker-compose-latest',
@@ -115,11 +115,26 @@ async function createWorkspaceContent(selectedVersion = 'latest') {
             "workspace.openFolderWhenFileOpens": true,
             "remote.autoForwardPorts": true,
             "workbench.confirmBeforeOpen": false,
-            "workbench.welcomePage.walkthroughs.openOnInstall": false
+            "workbench.welcomePage.walkthroughs.openOnInstall": false,
+            "workbench.startupEditor": "none"
         },
         "extensions": {
             "recommendations": [
                 "ms-vscode-remote.remote-containers"
+            ]
+        },
+        "tasks": {
+            "version": "2.0.0",
+            "tasks": [
+                {
+                    "label": "Attach to Container",
+                    "type": "shell",
+                    "command": "${command:rsm-vscode.startContainer}",
+                    "problemMatcher": [],
+                    "runOptions": {
+                        "runOn": "folderOpen"
+                    }
+                }
             ]
         },
         "metadata": {
@@ -134,7 +149,7 @@ async function createWorkspaceContent(selectedVersion = 'latest') {
                 hour12: false
             }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'),
             "containerVersion": version
-        }
+        },
     };
 }
 

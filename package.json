@@ -1,46 +1,51 @@
 {
     "name": "rsm-vscode",
-    "displayName": "VS Code extension for rsm-msba docker container",
-    "description": "Start RSM containers and tools from VS Code",
-    "version": "0.0.1",
+    "displayName": "Rady computing environment for business analytics",
+    "description": "VS Code extension for RSM MSBA business analytics computing environment",
+    "version": "0.2.0",
     "publisher": "vnijs",
     "license": "MIT",
-    "enableProposedApi": true,
+    "icon": "rsm-vscode.jpg",
     "repository": {
         "type": "git",
         "url": "https://github.com/vnijs/rsm-vscode"
     },
+    "bugs": {
+        "url": "https://github.com/vnijs/rsm-vscode/issues"
+    },
+    "homepage": "https://github.com/vnijs/rsm-vscode/blob/main/README.md",
+    "keywords": [
+        "docker",
+        "containers",
+        "development",
+        "remote development",
+        "rsm",
+        "msba"
+    ],
     "engines": {
         "vscode": "^1.85.0"
     },
     "categories": [
-        "Other"
+        "Data Science",
+        "Machine Learning"
     ],
     "activationEvents": [
         "onStartupFinished",
+        "workspaceContains:**/*.code-workspace",
         "onCommand:rsm-vscode.startContainer",
         "onCommand:rsm-vscode.stopContainer",
-        "onCommand:rsm-vscode.startRadiant",
-        "onCommand:rsm-vscode.startGitGadget",
-        "onCommand:rsm-vscode.cleanPackages",
-        "onCommand:rsm-vscode.setupContainer",
-        "onCommand:rsm-vscode.debugEnv",
-        "onCommand:rsm-vscode.changeWorkspace",
-        "onCommand:rsm-vscode.debugContainer",
-        "onCommand:rsm-vscode.setContainerVersion",
-        "onCommand:rsm-vscode.testFilePaths",
-        "onCommand:rsm-vscode.checkContainerConflicts"
+        "onCommand:rsm-vscode.debugEnv"
     ],
     "main": "./extension.js",
     "contributes": {
         "commands": [
             {
                 "command": "rsm-vscode.startContainer",
-                "title": "RSM: Attach to Container"
+                "title": "RSM: Attach to container"
             },
             {
                 "command": "rsm-vscode.stopContainer",
-                "title": "RSM: Detach from Container"
+                "title": "RSM: Detach from container"
             },
             {
                 "command": "rsm-vscode.startRadiant",
@@ -56,7 +61,7 @@
             },
             {
                 "command": "rsm-vscode.setupContainer",
-                "title": "RSM: Setup rsm-msba container (setup)"
+                "title": "RSM: Setup rsm-msba computing environment (setup)"
             },
             {
                 "command": "rsm-vscode.changeWorkspace",
@@ -64,19 +69,23 @@
             },
             {
                 "command": "rsm-vscode.debugContainer",
-                "title": "RSM: Debug Container"
+                "title": "RSM: Debug container"
             },
             {
                 "command": "rsm-vscode.setContainerVersion",
-                "title": "RSM: Set Container Version"
+                "title": "RSM: Set container version"
             },
             {
                 "command": "rsm-vscode.testFilePaths",
-                "title": "RSM: Test File Paths"
+                "title": "RSM: Test file paths"
             },
             {
                 "command": "rsm-vscode.checkContainerConflicts",
-                "title": "RSM: Check Container Conflicts"
+                "title": "RSM: Check container conflicts"
+            },
+            {
+                "command": "rsm-vscode.updateContainer",
+                "title": "RSM: Update docker image"
             }
         ]
     },
@@ -88,11 +97,15 @@
     },
     "devDependencies": {
         "@types/vscode": "^1.85.0",
-        "@types/node": "16.x",
-        "eslint": "^8.47.0",
-        "typescript": "^5.1.6",
-        "@vscode/vsce": "^2.24.0",
+        "@types/node": "^20.11.16",
+        "eslint": "^9.17.0",
+        "typescript": "^5.3.3",
+        "@vscode/vsce": "^3.2.1",
         "cross-env": "^7.0.3"
+    },
+    "dependencies": {
+        "glob": "^10.3.10",
+        "rimraf": "^5.0.5"
     },
     "capabilities": {
         "virtualWorkspaces": true,
@@ -108,4 +121,4 @@
     "enabledApiProposals": [
         "resolvers"
     ]
-} 
+}

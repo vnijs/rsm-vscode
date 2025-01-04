@@ -18,10 +18,11 @@ const {
     testFilePathsCommand,
     checkContainerConflictsCommand
 } = require('./src/utils/commands');
+const { updateContainerCommand } = require('./src/utils/update-container');
 const path = require('path');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.3.128";
+const EXTENSION_VERSION = "2024.1.4.3";
 
 // Global configuration storage
 let globalState;
@@ -57,7 +58,8 @@ function activate(context) {
             { id: 'rsm-vscode.debugContainer', handler: debugContainerCommand },
             { id: 'rsm-vscode.setContainerVersion', handler: () => setContainerVersionCommand(context) },
             { id: 'rsm-vscode.testFilePaths', handler: testFilePathsCommand },
-            { id: 'rsm-vscode.checkContainerConflicts', handler: () => checkContainerConflictsCommand(context) }
+            { id: 'rsm-vscode.checkContainerConflicts', handler: () => checkContainerConflictsCommand(context) },
+            { id: 'rsm-vscode.updateContainer', handler: updateContainerCommand }
         ];
 
         // Register each command with error handling

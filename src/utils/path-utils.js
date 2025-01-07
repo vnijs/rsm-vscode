@@ -15,7 +15,7 @@ const windowsPaths = {
         if (match) {
             return `/home/${match[1]}/${match[2]}`;
         }
-        return wslPath;
+        return wslPath.replace(/\\/g, '/');
     },
 
     async toLocalPath(containerPath) {
@@ -52,6 +52,10 @@ const macosPaths = {
 
     // Remove extra read/write/pathExists methods since they're not needed
     // The core functionality is just path conversion
+
+    toWSLPath(wslPath) {
+        return wslPath;
+    },
 
     toWSLMountPath(path) {
         return path; // No conversion needed on macOS

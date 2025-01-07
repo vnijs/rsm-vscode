@@ -13,6 +13,8 @@ const execAsync = util.promisify(exec);
 
 // Get the appropriate utilities based on platform
 const paths = isWindows ? windowsPaths : macosPaths;
+const { windowsContainer, macosContainer } = require('./container-utils');
+const container = isWindows ? windowsContainer : macosContainer;
 
 async function startContainerCommand(context) {
     if (await isInContainer()) {
@@ -119,7 +121,15 @@ async function startContainerCommand(context) {
         }
 
         // Get the container URI and open the folder
-        const uri = vscode.Uri.parse(`vscode-remote://attached-container+${currentPath}`);
+        log(`The current path is: ${currentPath}`);
+        // const uri = vscode.Uri.parse(`vscode-remote://attached-container+${currentPath}`);
+
+        // const formattedPath = currentPath.replace(/\\+/g, '/');
+        // const uri = await container.openInContainer(currentPath);
+        const wslPath = paths.toWSLPath(currentPath);
+        log(`wslPath: ${wslPath}`);
+        const uri = await container.openInContainer(wslPath);
+        log(`Opening with URI: ${uri}`);
         log(`Opening with URI: ${uri.toString()}`);
         await openWorkspaceFolder(uri);
 

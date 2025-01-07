@@ -235,7 +235,8 @@ async function createConfigFiles(targetFolder) {
         log(`Using compose file: ${dockerComposePath}`);
 
         // Convert local path to container path
-        const containerPath = `/home/jovyan/${path.basename(targetFolder)}`;
+        // const containerPath = `/home/jovyan/${path.basename(targetFolder)}`;
+        const containerPath = paths.toContainerPath(targetFolder);
         const devContainerContent = await createDevcontainerContent(containerPath, dockerComposePath, isArm);
 
         // Use writeFile utility that handles path conversion

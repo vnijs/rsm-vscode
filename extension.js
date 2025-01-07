@@ -22,7 +22,7 @@ const { updateContainerCommand } = require('./src/utils/update-container');
 const path = require('path');
 
 // Extension version for tracking changes
-const EXTENSION_VERSION = "2024.1.4.3";
+const EXTENSION_VERSION = "2024.1.4.7";
 
 // Global configuration storage
 let globalState;

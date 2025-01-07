@@ -13,10 +13,11 @@ function initLogger() {
     outputChannel = vscode.window.createOutputChannel('RSM VS Code');
 
     // Create logs directory in the extension's workspace
-    const logDir = path.join(os.homedir(), 'gh', 'rsm-vscode', 'logs');
-    if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir, { recursive: true });
-    }
+    // const logDir = path.join(os.homedir(), 'gh', 'rsm-vscode', 'logs');
+    const logDir = path.join(os.homedir(), 'Dropbox', 'r-packages', 'rsm-vscode', 'logs');
+    // if (!fs.existsSync(logDir)) {
+    //     fs.mkdirSync(logDir, { recursive: true });
+    // }
 
     // Create log file with timestamp
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');

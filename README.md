@@ -44,13 +44,18 @@ VS Code extension for Rady School of Mangement computing enrivonment for Busines
 
 The extension adds several commands to VS Code, accessible via the Command Palette (Ctrl+Shift+P):
 
-- `RSM: Attach to Container` - Start and attach to an RSM container
-- `RSM: Detach from Container` - Stop and detach from the current container
-- `RSM: Update docker image` - Update to the latest container version
+- `RSM: Start Docker container` - Start the latest container version
+- `RSM: Stop Docker container` - Stop running container
 - `RSM: Start Radiant` - Launch Radiant server
 - `RSM: Start GitGadget` - Launch GitGadget
-- `RSM: Set Container Version` - Change container version
-- `RSM: Change workspace folder` - Switch workspace location
+- `RSM: Setup rsm-msba computing environment (setup)` - Intial setup
+- `RSM: Update docker image` - Update to the latest container version
+- `RSM: Uninstall Update docker image` - Update to the latest container version
+
+<!-- - `RSM: Change workspace folder` - Switch workspace location -->
+<!-- - `RSM: Set Container Version` - Change container version -->
+<!-- - `RSM: Attach to Container` - Start and attach to an RSM container
+- `RSM: Detach from Container` - Stop and detach from the current container -->
 
 ## Extension Settings
 
@@ -67,7 +72,7 @@ See our [GitHub issues page](https://github.com/vnijs/rsm-vscode/issues) for cur
 
 ## Release Notes
 
-### 0.2.0
+### 0.4.0
 
 Initial release:
 - Basic container management

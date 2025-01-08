@@ -58,6 +58,10 @@
                 "title": "RSM: Start GitGadget (gitgadget)"
             },
             {
+                "command": "rsm-vscode.setupContainer",
+                "title": "RSM: Setup rsm-msba computing environment (setup)"
+            },
+            {
                 "command": "rsm-vscode.cleanPackages",
                 "title": "RSM: Uninstall local R and Python packages (clean)"
             },
@@ -95,8 +99,5 @@
     "extensionDependencies": [
         "ms-vscode-remote.remote-containers",
         "ms-vscode-remote.vscode-remote-extensionpack"
-    ],
-    "enabledApiProposals": [
-        "resolvers"
     ]
 }

@@ -2,7 +2,7 @@
     "name": "rsm-vscode",
     "displayName": "Rady computing environment for business analytics",
     "description": "VS Code extension for RSM MSBA business analytics computing environment",
-    "version": "0.4.0",
+    "version": "0.3.0",
     "publisher": "vnijs",
     "license": "MIT",
     "icon": "rsm-vscode.jpg",
@@ -34,13 +34,19 @@
         "workspaceContains:**/*.code-workspace",
         "onCommand:rsm-vscode.startContainer",
         "onCommand:rsm-vscode.stopContainer",
-        "onCommand:rsm-vscode.debugEnv",
-        "onCommand:rsm-vscode.dockerComposeUp",
-        "onCommand:rsm-vscode.dockerComposeDown"
+        "onCommand:rsm-vscode.debugEnv"
     ],
     "main": "./extension.js",
     "contributes": {
         "commands": [
+            {
+                "command": "rsm-vscode.startContainer",
+                "title": "RSM: Attach to container"
+            },
+            {
+                "command": "rsm-vscode.stopContainer",
+                "title": "RSM: Detach from container"
+            },
             {
                 "command": "rsm-vscode.dockerComposeUp",
                 "title": "RSM: Start Docker container"
@@ -60,6 +66,30 @@
             {
                 "command": "rsm-vscode.cleanPackages",
                 "title": "RSM: Uninstall local R and Python packages (clean)"
+            },
+            {
+                "command": "rsm-vscode.setupContainer",
+                "title": "RSM: Setup rsm-msba computing environment (setup)"
+            },
+            {
+                "command": "rsm-vscode.changeWorkspace",
+                "title": "RSM: Change workspace folder"
+            },
+            {
+                "command": "rsm-vscode.debugContainer",
+                "title": "RSM: Debug container"
+            },
+            {
+                "command": "rsm-vscode.setContainerVersion",
+                "title": "RSM: Set container version"
+            },
+            {
+                "command": "rsm-vscode.testFilePaths",
+                "title": "RSM: Test file paths"
+            },
+            {
+                "command": "rsm-vscode.checkContainerConflicts",
+                "title": "RSM: Check container conflicts"
             },
             {
                 "command": "rsm-vscode.updateContainer",

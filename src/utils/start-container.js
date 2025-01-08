@@ -10,13 +10,25 @@ const fs = require('fs').promises;
 const { exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
+const os = require('os');
 
 // Get the appropriate utilities based on platform
 const paths = isWindows ? windowsPaths : macosPaths;
 const { windowsContainer, macosContainer } = require('./container-utils');
 const container = isWindows ? windowsContainer : macosContainer;
 
-async function startContainerCommand(context) {
+async function waitForContainer(maxWaitTimeMs = 30000, checkIntervalMs = 1000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitTimeMs) {
+        if (await isInContainer()) {
+            return true;
+        }
+        await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
+    }
+    return false;
+}
+
+async function startContainerCommand(context, useTemporaryDevcontainer = true) {
     if (await isInContainer()) {
         const msg = 'Already connected to the RSM container';
         log(msg);
@@ -45,13 +57,22 @@ async function startContainerCommand(context) {
 
     try {
         const devcontainerJsonPath = path.join(currentPath, '.devcontainer.json');
-        log(`Checking for .devcontainer.json at: ${devcontainerJsonPath}`);
+        log(`Using devcontainer.json at: ${devcontainerJsonPath}`);
 
         let devcontainerContent;
         try {
             const devcontainerRaw = await fs.readFile(devcontainerJsonPath, 'utf8');
             devcontainerContent = JSON.parse(devcontainerRaw);
             log('Found existing .devcontainer.json');
+
+            // If using temporary mode and this is not a temporary file, create a new one
+            if (useTemporaryDevcontainer && !devcontainerContent.metadata?.isTemporary) {
+                log('Creating new temporary configuration');
+                await createConfigFiles(currentPath, useTemporaryDevcontainer);
+                // Re-read the new configuration
+                const newDevcontainerRaw = await fs.readFile(devcontainerJsonPath, 'utf8');
+                devcontainerContent = JSON.parse(newDevcontainerRaw);
+            }
 
             // Check if it's an RSM container
             if (devcontainerContent.name && devcontainerContent.name.startsWith('rsm-msba-k8s-')) {
@@ -117,7 +138,8 @@ async function startContainerCommand(context) {
         } catch (e) {
             log(`No valid .devcontainer.json found: ${e.message}`);
             log('Creating new configuration files');
-            await createConfigFiles(currentPath);
+            // Create config files in the temporary directory if using temporary mode
+            await createConfigFiles(useTemporaryDevcontainer ? tmpDir : currentPath);
         }
 
         // Get the container URI and open the folder
@@ -131,7 +153,20 @@ async function startContainerCommand(context) {
         const uri = await container.openInContainer(wslPath);
         log(`Opening with URI: ${uri}`);
         log(`Opening with URI: ${uri.toString()}`);
-        await openWorkspaceFolder(uri);
+
+        // If using temporary mode, add cleanup command
+        const afterCommands = useTemporaryDevcontainer ? [
+            async () => {
+                try {
+                    await fs.unlink(devcontainerJsonPath);
+                    log('Cleaned up .devcontainer.json file');
+                } catch (error) {
+                    log(`Error cleaning up .devcontainer.json: ${error.message}`);
+                }
+            }
+        ] : [];
+
+        await openWorkspaceFolder(uri, null, true, afterCommands);
 
     } catch (error) {
         log('Error attaching to container:', true);
@@ -142,4 +177,4 @@ async function startContainerCommand(context) {
 
 module.exports = {
     startContainerCommand
-}; 
+};

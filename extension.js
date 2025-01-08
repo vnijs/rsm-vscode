@@ -16,7 +16,9 @@ const {
     debugContainerCommand,
     setContainerVersionCommand,
     testFilePathsCommand,
-    checkContainerConflictsCommand
+    checkContainerConflictsCommand,
+    dockerComposeUp,
+    dockerComposeDown
 } = require('./src/utils/commands');
 const { updateContainerCommand } = require('./src/utils/update-container');
 const path = require('path');
@@ -40,7 +42,7 @@ function activate(context) {
         log(`Extension Version: ${EXTENSION_VERSION}`);
 
         // Show version popup
-        vscode.window.showInformationMessage(`RSM VS Code Extension ${EXTENSION_VERSION}`);
+        // vscode.window.showInformationMessage(`RSM VS Code Extension ${EXTENSION_VERSION}`);
 
         // Store global state
         globalState = context.globalState;
@@ -59,7 +61,9 @@ function activate(context) {
             { id: 'rsm-vscode.setContainerVersion', handler: () => setContainerVersionCommand(context) },
             { id: 'rsm-vscode.testFilePaths', handler: testFilePathsCommand },
             { id: 'rsm-vscode.checkContainerConflicts', handler: () => checkContainerConflictsCommand(context) },
-            { id: 'rsm-vscode.updateContainer', handler: updateContainerCommand }
+            { id: 'rsm-vscode.updateContainer', handler: updateContainerCommand },
+            { id: 'rsm-vscode.dockerComposeUp', handler: () => dockerComposeUp(context) },
+            { id: 'rsm-vscode.dockerComposeDown', handler: () => dockerComposeDown(context) }
         ];
 
         // Register each command with error handling

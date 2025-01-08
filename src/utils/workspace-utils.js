@@ -7,8 +7,9 @@ const { handleContainerConflict } = require('./container-utils');
  * @param {vscode.Uri} uri - The URI to open
  * @param {string} workspaceFile - Optional path to workspace file
  * @param {boolean} forceReuseWindow - Whether to reuse the current window
+ * @param {Function[]} afterCommands - Array of commands to execute after container is attached
  */
-async function openWorkspaceFolder(uri, workspaceFile = null, forceReuseWindow = true) {
+async function openWorkspaceFolder(uri, workspaceFile = null, forceReuseWindow = true, afterCommands = []) {
     log(`Opening ${workspaceFile ? 'workspace' : 'folder'}: ${uri.toString()}`);
 
     try {
@@ -30,6 +31,16 @@ async function openWorkspaceFolder(uri, workspaceFile = null, forceReuseWindow =
         // Wait for the operation to complete
         await new Promise(resolve => setTimeout(resolve, 3000));
 
+        // Execute any additional commands
+        for (const cmd of afterCommands) {
+            try {
+                await cmd();
+                log('Successfully executed after-attach command');
+            } catch (cmdError) {
+                log(`Error executing after-attach command: ${cmdError.message}`);
+            }
+        }
+
         // Force a refresh of the explorer view
         await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
     } catch (error) {
@@ -48,6 +59,17 @@ async function openWorkspaceFolder(uri, workspaceFile = null, forceReuseWindow =
                     { forceReuseWindow }
                 );
             }
+
+            // Execute any additional commands after retry
+            for (const cmd of afterCommands) {
+                try {
+                    await cmd();
+                    log('Successfully executed after-attach command (retry)');
+                } catch (cmdError) {
+                    log(`Error executing after-attach command (retry): ${cmdError.message}`);
+                }
+            }
+
             // Wait again after retry
             await new Promise(resolve => setTimeout(resolve, 3000));
             await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');

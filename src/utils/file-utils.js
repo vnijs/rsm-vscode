@@ -215,8 +215,9 @@ function getProjectName(path) {
 /**
  * Creates configuration files for a new workspace
  * @param {string} targetFolder - The folder to create configuration files in
+ * @param {boolean} isTemporary - Whether this is a temporary configuration
  */
-async function createConfigFiles(targetFolder) {
+async function createConfigFiles(targetFolder, isTemporary = false) {
     try {
         // Convert target folder to local path if needed
         targetFolder = paths.toLocalPath(targetFolder);
@@ -235,9 +236,17 @@ async function createConfigFiles(targetFolder) {
         log(`Using compose file: ${dockerComposePath}`);
 
         // Convert local path to container path
-        // const containerPath = `/home/jovyan/${path.basename(targetFolder)}`;
         const containerPath = paths.toContainerPath(targetFolder);
         const devContainerContent = await createDevcontainerContent(containerPath, dockerComposePath, isArm);
+
+        // Add metadata for temporary files
+        if (isTemporary) {
+            devContainerContent.metadata = {
+                ...devContainerContent.metadata,
+                isTemporary: true,
+                createdAt: new Date().toISOString()
+            };
+        }
 
         // Use writeFile utility that handles path conversion
         await writeFile(devContainerContent, devContainerPath);

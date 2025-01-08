@@ -10,6 +10,7 @@ const { changeWorkspaceCommand } = require('./change-workspace');
 const { setContainerVersionCommand } = require('./set-container-version');
 const { testFilePathsCommand } = require('./test-file-paths');
 const { checkContainerConflictsCommand } = require('./check-container-conflicts');
+const { dockerComposeUp, dockerComposeDown } = require('./docker-compose-utils');
 
 module.exports = {
     startContainerCommand,
@@ -23,5 +24,7 @@ module.exports = {
     debugContainerCommand,
     setContainerVersionCommand,
     testFilePathsCommand,
-    checkContainerConflictsCommand
+    checkContainerConflictsCommand,
+    dockerComposeUp,
+    dockerComposeDown
 };

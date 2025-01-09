@@ -6,6 +6,7 @@ const util = require('util');
 const execAsync = util.promisify(exec);
 const { log } = require('./logger');
 const { isWindows } = require('./container-utils');
+const { getWSLUsername } = require('./wsl-utils');
 
 /**
  * Get the appropriate Docker Compose file based on system architecture and OS
@@ -51,7 +52,22 @@ async function dockerComposeUp(context) {
         const composeFileName = path.basename(composeFile);
 
         log(`Starting container using compose file: ${composeFileName}`);
-        await execAsync(`cd "${composeDir}" && docker-compose -f "${composeFileName}" up -d`);
+
+        // On Windows, we need to get the WSL username
+        let env = { ...process.env };
+        if (isWindows) {
+            try {
+                const wslUser = await getWSLUsername();
+                if (wslUser) {
+                    env.WSL_USER = wslUser.trim();
+                    log(`Using WSL user: ${wslUser.trim()}`);
+                }
+            } catch (error) {
+                log(`Failed to get WSL username: ${error.message}`);
+            }
+        }
+
+        await execAsync(`cd "${composeDir}" && docker-compose -f "${composeFileName}" up -d`, { env });
         vscode.window.showInformationMessage('RSM container started successfully');
     } catch (error) {
         log(`Failed to start container: ${error.message}`, true);

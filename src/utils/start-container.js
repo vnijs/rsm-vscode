@@ -28,7 +28,7 @@ async function waitForContainer(maxWaitTimeMs = 30000, checkIntervalMs = 1000) {
     return false;
 }
 
-async function startContainerCommand(context, useTemporaryDevcontainer = true) {
+async function startContainerCommand(context, useTemporaryDevcontainer = false) {
     if (await isInContainer()) {
         const msg = 'Already connected to the RSM container';
         log(msg);

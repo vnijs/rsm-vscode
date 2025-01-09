@@ -2,7 +2,7 @@
     "name": "rsm-vscode",
     "displayName": "Rady computing environment for business analytics",
     "description": "VS Code extension for RSM MSBA business analytics computing environment",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "publisher": "vnijs",
     "license": "MIT",
     "icon": "rsm-vscode.jpg",
@@ -75,7 +75,8 @@
         "lint": "eslint .",
         "pretest": "npm run lint",
         "package": "cross-env NODE_NO_WARNINGS=1 vsce package",
-        "publish": "cross-env NODE_NO_WARNINGS=1 vsce publish"
+        "publish": "cross-env NODE_NO_WARNINGS=1 vsce publish",
+        "watch": "tsc -watch -p ./"
     },
     "devDependencies": {
         "@types/vscode": "^1.85.0",

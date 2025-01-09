@@ -72,7 +72,7 @@ See our [GitHub issues page](https://github.com/vnijs/rsm-vscode/issues) for cur
 
 ## Release Notes
 
-### 0.5.0
+### 0.5.1
 
 Initial release:
 - Basic container management

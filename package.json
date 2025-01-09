@@ -2,7 +2,7 @@
     "name": "rsm-vscode",
     "displayName": "Rady computing environment for business analytics",
     "description": "VS Code extension for RSM MSBA business analytics computing environment",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "publisher": "vnijs",
     "license": "MIT",
     "icon": "rsm-vscode.jpg",
